@@ -307,7 +307,7 @@ static int iface_port_fini(struct iface *iface) {
 		LOG(ERR, "rte_eth_dev_info_get: %s", rte_strerror(-ret));
 	if ((ret = rte_eth_dev_stop(port->port_id)) < 0)
 		LOG(ERR, "rte_eth_dev_stop: %s", rte_strerror(-ret));
-	if ((ret = rte_eth_dev_close(port->port_id)) < 0)
+	if (port->hotplugged && (ret = rte_eth_dev_close(port->port_id)) < 0)
 		LOG(ERR, "rte_eth_dev_close: %s", rte_strerror(-ret));
 	if (port->hotplugged && info.device != NULL && (ret = rte_dev_remove(info.device)) < 0)
 		LOG(ERR, "rte_dev_remove: %s", rte_strerror(-ret));
