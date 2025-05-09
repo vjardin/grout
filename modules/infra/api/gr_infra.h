@@ -91,6 +91,7 @@ struct __gr_iface_info_port_base {
 	uint16_t rxq_size;
 	uint16_t txq_size;
 	uint32_t link_speed; //!< Physical link speed in Megabit/sec.
+	bool hotplugged;
 	struct rte_ether_addr mac;
 };
 

@@ -20,6 +20,7 @@ static void port_show(const struct gr_api_client *c, const struct gr_iface *ifac
 
 	printf("devargs: %s\n", port->devargs);
 	printf("driver:  %s\n", port->driver_name);
+	printf("hotplugged: %s\n", port->hotplugged ? "on" : "off");
 	printf("mac: " ETH_F "\n", &port->mac);
 	if (port->link_speed == UINT32_MAX)
 		printf("speed: unknown\n");
