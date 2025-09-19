@@ -9,17 +9,15 @@ on:
 jobs:
   pr_agent_job:
     if: >
-      ${{
-        github.event.sender.type != 'Bot' &&
-        (
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.fork == false
-        ) &&
-        (
-          github.event_name != 'issue_comment' ||
-          github.event.issue.pull_request != null
-        )
-      }}
+      github.event.sender.type != 'Bot' &&
+      (
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.fork == false
+      ) &&
+      (
+        github.event_name != 'issue_comment' ||
+        github.event.issue.pull_request != null
+      )
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -27,7 +25,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Run PR-Agent
+      - name: Run Iliad Codex
         uses: qodo-ai/pr-agent@v0.30
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
