@@ -343,6 +343,35 @@ struct gr_affinity_rxq_set_req {
 
 // struct gr_affinity_rxq_set_resp { };
 
+// Set TX queue rate limit (only for GR_IFACE_TYPE_PORT).
+#define GR_INFRA_TXQ_RATE_SET REQUEST_TYPE(GR_INFRA_MODULE, 0x0012)
+
+struct gr_infra_txq_rate_set_req {
+	uint16_t iface_id; // Must be a port interface.
+	uint16_t txq_id;
+	uint32_t rate_mbps; // 0 to disable rate limiting.
+};
+
+// struct gr_infra_txq_rate_set_resp { };
+
+// Port queue info entry (one per queue).
+struct gr_port_queue_info {
+	uint16_t iface_id;
+	uint16_t queue_id;
+	uint16_t nb_desc;
+	uint8_t queue_state;
+	bool is_tx; // true for TX queue, false for RX queue.
+};
+
+// List port queue details.
+#define GR_INFRA_QUEUE_LIST REQUEST_TYPE(GR_INFRA_MODULE, 0x0013)
+
+struct gr_infra_queue_list_req {
+	uint16_t iface_id; // GR_IFACE_ID_UNDEF for all ports.
+};
+
+STREAM_RESP(struct gr_port_queue_info);
+
 // stats ///////////////////////////////////////////////////////////////////////
 
 // Infrastructure statistics flags.

@@ -11,6 +11,8 @@
 #include <gr_vec.h>
 #include <gr_worker.h>
 
+#include <rte_ethdev.h>
+
 #include <errno.h>
 #include <sys/queue.h>
 #include <unistd.h>
@@ -98,9 +100,68 @@ static struct api_out rxq_set(const void *request, struct api_ctx *) {
 	return api_out(0, 0, NULL);
 }
 
+static struct api_out txq_rate_set(const void *request, struct api_ctx *) {
+	const struct gr_infra_txq_rate_set_req *req = request;
+	struct iface *iface = iface_from_id(req->iface_id);
+	struct iface_info_port *port;
+	int ret;
+
+	if (iface == NULL)
+		return api_out(errno, 0, NULL);
+
+	port = iface_info_port(iface);
+	ret = rte_eth_set_queue_rate_limit(port->port_id, req->txq_id, req->rate_mbps);
+	if (ret < 0)
+		return api_out(-ret, 0, NULL);
+
+	return api_out(0, 0, NULL);
+}
+
+static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
+	const struct gr_infra_queue_list_req *req = request;
+	struct iface *iface = NULL;
+
+	while ((iface = iface_next(GR_IFACE_TYPE_PORT, iface)) != NULL) {
+		if (req->iface_id != GR_IFACE_ID_UNDEF && iface->id != req->iface_id)
+			continue;
+		struct iface_info_port *port = iface_info_port(iface);
+
+		for (uint16_t q = 0; q < port->n_rxq; q++) {
+			struct rte_eth_rxq_info qinfo;
+			struct gr_port_queue_info info = {
+				.iface_id = iface->id,
+				.queue_id = q,
+				.is_tx = false,
+			};
+			if (rte_eth_rx_queue_info_get(port->port_id, q, &qinfo) == 0) {
+				info.nb_desc = qinfo.nb_desc;
+				info.queue_state = qinfo.queue_state;
+			}
+			api_send(ctx, sizeof(info), &info);
+		}
+		for (uint16_t q = 0; q < port->n_txq; q++) {
+			struct rte_eth_txq_info qinfo;
+			struct gr_port_queue_info info = {
+				.iface_id = iface->id,
+				.queue_id = q,
+				.is_tx = true,
+			};
+			if (rte_eth_tx_queue_info_get(port->port_id, q, &qinfo) == 0) {
+				info.nb_desc = qinfo.nb_desc;
+				info.queue_state = qinfo.queue_state;
+			}
+			api_send(ctx, sizeof(info), &info);
+		}
+	}
+
+	return api_out(0, 0, NULL);
+}
+
 RTE_INIT(_init) {
 	gr_api_handler(GR_AFFINITY_RXQ_LIST, rxq_list);
 	gr_api_handler(GR_AFFINITY_RXQ_SET, rxq_set);
+	gr_api_handler(GR_INFRA_TXQ_RATE_SET, txq_rate_set);
+	gr_api_handler(GR_INFRA_QUEUE_LIST, queue_list);
 	gr_api_handler(GR_AFFINITY_CPU_GET, affinity_get);
 	gr_api_handler(GR_AFFINITY_CPU_SET, affinity_set);
 }
