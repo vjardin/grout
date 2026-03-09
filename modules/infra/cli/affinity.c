@@ -137,6 +137,77 @@ static cmd_status_t txq_rate_set_all(struct gr_api_client *c, const struct ec_pn
 	return CMD_SUCCESS;
 }
 
+static cmd_status_t pp_rate_table_show(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_infra_pp_rate_table_req tbl_req;
+	struct gr_infra_pp_rate_table_resp tbl_resp;
+	struct gr_infra_queue_list_req q_req;
+	const struct gr_port_queue_info *q;
+	struct gr_iface *iface = iface_from_name(c, arg_str(p, "NAME"));
+	void *resp_ptr = NULL;
+	int ret;
+
+	if (iface == NULL)
+		return CMD_ERROR;
+
+	tbl_req.iface_id = iface->id;
+	q_req.iface_id = iface->id;
+	free(iface);
+
+	if (gr_api_client_send_recv(c, GR_INFRA_PP_RATE_TABLE_GET, sizeof(tbl_req), &tbl_req, &resp_ptr) < 0)
+		return CMD_ERROR;
+
+	memcpy(&tbl_resp, resp_ptr, sizeof(tbl_resp));
+	free(resp_ptr);
+
+	struct gr_object *obj = gr_object_new(NULL);
+	gr_object_field(obj, "total", GR_DISP_INT, "%u", tbl_resp.total);
+	gr_object_field(obj, "used", GR_DISP_INT, "%u", tbl_resp.used);
+	gr_object_field(obj, "free", GR_DISP_INT, "%u", tbl_resp.total - tbl_resp.used);
+	gr_object_free(obj);
+
+	/* Build rate distribution from TX queue info. */
+	struct { uint32_t rate; uint16_t count; } dist[256];
+	unsigned n_dist = 0;
+
+	gr_api_client_stream_foreach (q, ret, c, GR_INFRA_QUEUE_LIST, sizeof(q_req), &q_req) {
+		if (!q->is_tx)
+			continue;
+		unsigned i;
+		for (i = 0; i < n_dist; i++) {
+			if (dist[i].rate == q->rate_mbps) {
+				dist[i].count++;
+				break;
+			}
+		}
+		if (i == n_dist && n_dist < ARRAY_DIM(dist)) {
+			dist[n_dist].rate = q->rate_mbps;
+			dist[n_dist].count = 1;
+			n_dist++;
+		}
+	}
+	if (ret < 0)
+		return CMD_ERROR;
+
+	if (n_dist > 0) {
+		struct gr_table *table = gr_table_new();
+		gr_table_column(table, "RATE", GR_DISP_LEFT);
+		gr_table_column(table, "QUEUES", GR_DISP_RIGHT | GR_DISP_INT);
+
+		printf("\n");
+		for (unsigned i = 0; i < n_dist; i++) {
+			if (dist[i].rate == 0)
+				gr_table_cell(table, 0, "unlimited");
+			else
+				gr_table_cell(table, 0, "%u Mbps", dist[i].rate);
+			gr_table_cell(table, 1, "%u", dist[i].count);
+			gr_table_print_row(table);
+		}
+		gr_table_free(table);
+	}
+
+	return CMD_SUCCESS;
+}
+
 static const char *queue_state_name(uint8_t state) {
 	switch (state) {
 	case 0:
@@ -151,7 +222,6 @@ static const char *queue_state_name(uint8_t state) {
 static cmd_status_t queue_list_show(struct gr_api_client *c, const struct ec_pnode *p) {
 	struct gr_infra_queue_list_req req = {.iface_id = GR_IFACE_ID_UNDEF};
 	const struct gr_port_queue_info *q;
-	struct libscols_table *table;
 	int ret;
 
 	const char *name = arg_str(p, "NAME");
@@ -163,27 +233,24 @@ static cmd_status_t queue_list_show(struct gr_api_client *c, const struct ec_pno
 		free(iface);
 	}
 
-	table = scols_new_table();
-	scols_table_new_column(table, "IFACE", 0, 0);
-	scols_table_new_column(table, "DIR", 0, 0);
-	scols_table_new_column(table, "QUEUE", 0, 0);
-	scols_table_new_column(table, "LCORES", 0, 0);
-	scols_table_new_column(table, "NB_DESC", 0, 0);
-	scols_table_new_column(table, "STATE", 0, 0);
-	scols_table_new_column(table, "RATE", 0, 0);
-	scols_table_set_column_separator(table, "  ");
+	struct gr_table *table = gr_table_new();
+	gr_table_column(table, "IFACE", GR_DISP_LEFT);
+	gr_table_column(table, "DIR", GR_DISP_LEFT);
+	gr_table_column(table, "QUEUE", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(table, "LCORES", GR_DISP_LEFT);
+	gr_table_column(table, "NB_DESC", GR_DISP_RIGHT | GR_DISP_INT);
+	gr_table_column(table, "STATE", GR_DISP_LEFT);
+	gr_table_column(table, "RATE", GR_DISP_LEFT);
 
 	gr_api_client_stream_foreach (q, ret, c, GR_INFRA_QUEUE_LIST, sizeof(req), &req) {
-		struct libscols_line *line = scols_table_new_line(table, NULL);
-
 		struct gr_iface *iface = iface_from_id(c, q->iface_id);
 		if (iface != NULL)
-			scols_line_sprintf(line, 0, "%s", iface->name);
+			gr_table_cell(table, 0, "%s", iface->name);
 		else
-			scols_line_sprintf(line, 0, "%u", q->iface_id);
+			gr_table_cell(table, 0, "%u", q->iface_id);
 		free(iface);
-		scols_line_sprintf(line, 1, "%s", q->is_tx ? "tx" : "rx");
-		scols_line_sprintf(line, 2, "%u", q->queue_id);
+		gr_table_cell(table, 1, "%s", q->is_tx ? "tx" : "rx");
+		gr_table_cell(table, 2, "%u", q->queue_id);
 		if (q->cpu_mask != 0) {
 			char buf[192] = "";
 			int off = 0;
@@ -192,20 +259,20 @@ static cmd_status_t queue_list_show(struct gr_api_client *c, const struct ec_pno
 					off += snprintf(buf + off, sizeof(buf) - off,
 							"%s%u", off ? "," : "", i);
 			}
-			scols_line_set_data(line, 3, buf);
+			gr_table_cell(table, 3, "%s", buf);
 		} else {
-			scols_line_sprintf(line, 3, "-");
+			gr_table_cell(table, 3, "-");
 		}
-		scols_line_sprintf(line, 4, "%u", q->nb_desc);
-		scols_line_sprintf(line, 5, "%s", queue_state_name(q->queue_state));
+		gr_table_cell(table, 4, "%u", q->nb_desc);
+		gr_table_cell(table, 5, "%s", queue_state_name(q->queue_state));
 		if (q->is_tx && q->rate_mbps > 0)
-			scols_line_sprintf(line, 6, "%u Mbps", q->rate_mbps);
+			gr_table_cell(table, 6, "%u Mbps", q->rate_mbps);
 		else
-			scols_line_sprintf(line, 6, "-");
+			gr_table_cell(table, 6, "-");
+		gr_table_print_row(table);
 	}
 
-	scols_print_table(table);
-	scols_unref_table(table);
+	gr_table_free(table);
 
 	return ret < 0 ? CMD_ERROR : CMD_SUCCESS;
 }
@@ -301,6 +368,18 @@ static int ctx_init(struct ec_node *root) {
 		"info",
 		queue_list_show,
 		"Display per-queue details for all ports."
+	);
+	if (ret < 0)
+		return ret;
+	ret = CLI_COMMAND(
+		QMAP_CTX(root),
+		"rate-table NAME",
+		pp_rate_table_show,
+		"Display packet pacing rate table capacity.",
+		with_help(
+			"Port interface name.",
+			ec_node_dyn("NAME", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
+		)
 	);
 	if (ret < 0)
 		return ret;

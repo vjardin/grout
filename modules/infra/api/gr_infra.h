@@ -374,6 +374,18 @@ struct gr_infra_queue_list_req {
 
 STREAM_RESP(struct gr_port_queue_info);
 
+// Query packet pacing rate table capacity for a port.
+#define GR_INFRA_PP_RATE_TABLE_GET REQUEST_TYPE(GR_INFRA_MODULE, 0x0014)
+
+struct gr_infra_pp_rate_table_req {
+	uint16_t iface_id; // Must be a port interface.
+};
+
+struct gr_infra_pp_rate_table_resp {
+	uint16_t total; // Total HW rate table entries.
+	uint16_t used; // Currently allocated entries.
+};
+
 // stats ///////////////////////////////////////////////////////////////////////
 
 // Infrastructure statistics flags.

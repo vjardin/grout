@@ -12,6 +12,7 @@
 #include <gr_worker.h>
 
 #include <rte_ethdev.h>
+#include <rte_pmd_mlx5.h>
 
 #include <errno.h>
 #include <sys/queue.h>
@@ -192,11 +193,37 @@ static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
 	return api_out(0, 0, NULL);
 }
 
+static struct api_out pp_rate_table_get(const void *request, struct api_ctx *) {
+	const struct gr_infra_pp_rate_table_req *req = request;
+	struct gr_infra_pp_rate_table_resp *resp;
+	struct rte_pmd_mlx5_pp_rate_table_info pmd_info;
+	struct iface *iface = iface_from_id(req->iface_id);
+	struct iface_info_port *port;
+	int ret;
+
+	if (iface == NULL)
+		return api_out(errno, 0, NULL);
+
+	port = iface_info_port(iface);
+	ret = rte_pmd_mlx5_pp_rate_table_query(port->port_id, &pmd_info);
+	if (ret < 0)
+		return api_out(-ret, 0, NULL);
+
+	resp = calloc(1, sizeof(*resp));
+	if (resp == NULL)
+		return api_out(ENOMEM, 0, NULL);
+
+	resp->total = pmd_info.total;
+	resp->used = pmd_info.used;
+	return api_out(0, sizeof(*resp), resp);
+}
+
 RTE_INIT(_init) {
 	gr_api_handler(GR_AFFINITY_RXQ_LIST, rxq_list);
 	gr_api_handler(GR_AFFINITY_RXQ_SET, rxq_set);
 	gr_api_handler(GR_INFRA_TXQ_RATE_SET, txq_rate_set);
 	gr_api_handler(GR_INFRA_QUEUE_LIST, queue_list);
+	gr_api_handler(GR_INFRA_PP_RATE_TABLE_GET, pp_rate_table_get);
 	gr_api_handler(GR_AFFINITY_CPU_GET, affinity_get);
 	gr_api_handler(GR_AFFINITY_CPU_SET, affinity_set);
 }
