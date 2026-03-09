@@ -309,7 +309,7 @@ static void rxq_assign_existing_worker(void **) {
 	assert_qmaps(w2.rxqs, q(2, 1), q(2, 0));
 	assert_qmaps(w3.rxqs);
 	assert_qmaps(w1.txqs, q(0, 0), q(1, 0), q(2, 0));
-	assert_qmaps(w2.txqs, q(0, 1), q(1, 1), q(2, 1));
+	assert_qmaps(w2.txqs, q(0, 1), q(0, 2), q(1, 1), q(1, 2), q(2, 1), q(2, 2));
 	assert_qmaps(w3.txqs);
 }
 
@@ -322,7 +322,7 @@ static void rxq_assign_existing_worker_destroy(void **) {
 	assert_qmaps(w2.rxqs, q(2, 1));
 	assert_qmaps(w3.rxqs);
 	assert_qmaps(w1.txqs, q(0, 0), q(1, 0), q(2, 0));
-	assert_qmaps(w2.txqs, q(0, 1), q(1, 1), q(2, 1));
+	assert_qmaps(w2.txqs, q(0, 1), q(0, 2), q(1, 1), q(1, 2), q(2, 1), q(2, 2));
 	assert_qmaps(w3.txqs);
 
 	assert_int_equal(worker_rxq_assign(2, 1, 1), 0);
@@ -330,7 +330,7 @@ static void rxq_assign_existing_worker_destroy(void **) {
 	assert_qmaps(w1.rxqs, q(0, 0), q(0, 1), q(1, 0), q(1, 1), q(2, 0), q(2, 1));
 	assert_qmaps(w2.rxqs);
 	assert_qmaps(w3.rxqs);
-	assert_qmaps(w1.txqs, q(1, 0), q(2, 0), q(0, 0));
+	assert_qmaps(w1.txqs, q(0, 0), q(0, 1), q(0, 2), q(1, 0), q(1, 1), q(1, 2), q(2, 0), q(2, 1), q(2, 2));
 	assert_qmaps(w2.txqs);
 	assert_qmaps(w3.txqs);
 }
@@ -344,7 +344,7 @@ static void rxq_assign_new_worker(void **) {
 	assert_qmaps(w2.rxqs, q(2, 1));
 	assert_qmaps(w3.rxqs);
 	assert_qmaps(w1.txqs, q(0, 0), q(1, 0), q(2, 0));
-	assert_qmaps(w2.txqs, q(0, 1), q(1, 1), q(2, 1));
+	assert_qmaps(w2.txqs, q(0, 1), q(0, 2), q(1, 1), q(1, 2), q(2, 1), q(2, 2));
 	assert_qmaps(w3.txqs);
 }
 
@@ -358,7 +358,7 @@ static void rxq_assign_new_worker_destroy(void **) {
 	assert_qmaps(w3.rxqs, q(2, 1));
 	assert_qmaps(w1.txqs, q(0, 0), q(1, 0), q(2, 0));
 	assert_qmaps(w2.txqs);
-	assert_qmaps(w3.txqs, q(0, 1), q(1, 1), q(2, 1));
+	assert_qmaps(w3.txqs, q(0, 1), q(0, 2), q(1, 1), q(1, 2), q(2, 1), q(2, 2));
 }
 
 static void rxq_assign_new_worker2(void **) {
@@ -400,11 +400,12 @@ static void queue_distribute_reduce(void **) {
 	assert_qmaps(w2.txqs);
 	assert_qmaps(w3.txqs);
 	assert_qmaps(w4.txqs, q(0, 0), q(1, 0), q(2, 0));
-	assert_qmaps(w5.txqs, q(0, 1), q(1, 1), q(2, 1));
+	assert_qmaps(w5.txqs, q(0, 1), q(0, 2), q(1, 1), q(1, 2), q(2, 1), q(2, 2));
 
 	for (unsigned i = 0; i < ARRAY_DIM(ifaces); i++) {
 		struct iface_info_port *p = iface_info_port(ifaces[i]);
-		assert_int_equal(p->n_txq, CPU_COUNT(&affinity));
+		// n_txq stays at 3 (setup value), not reduced to CPU_COUNT
+		assert_int_equal(p->n_txq, 3);
 	}
 }
 

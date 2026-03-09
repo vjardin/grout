@@ -230,20 +230,43 @@ static void worker_txq_distribute(gr_vec struct iface_info_port **ports) {
 	STAILQ_FOREACH (worker, &workers, next)
 		gr_vec_free(worker->txqs);
 
-	// assign TX queues only to workers that have RX queues
+	// assign TX queues to workers that have RX queues
 	gr_vec_foreach (port, ports) {
-		uint16_t txq_idx = 0;
+		assert(port->n_txq > 0);
+		unsigned n_active = 0;
+		STAILQ_FOREACH (worker, &workers, next) {
+			if (gr_vec_len(worker->rxqs) > 0)
+				n_active++;
+		}
+		if (n_active == 0)
+			continue;
+
+		unsigned w_idx = 0;
 		STAILQ_FOREACH (worker, &workers, next) {
 			if (gr_vec_len(worker->rxqs) == 0)
 				continue;
-			assert(port->n_txq > 0);
-			struct queue_map txq = {
-				.port_id = port->port_id,
-				.queue_id = txq_idx % port->n_txq,
-				.enabled = port->started,
-			};
-			gr_vec_add(worker->txqs, txq);
-			txq_idx++;
+			if (port->n_txq >= n_active) {
+				// enough queues: assign contiguous blocks
+				uint16_t start = (w_idx * port->n_txq) / n_active;
+				uint16_t end = ((w_idx + 1) * port->n_txq) / n_active;
+				for (uint16_t q = start; q < end; q++) {
+					struct queue_map txq = {
+						.port_id = port->port_id,
+						.queue_id = q,
+						.enabled = port->started,
+					};
+					gr_vec_add(worker->txqs, txq);
+				}
+			} else {
+				// fewer queues than workers: share via round-robin
+				struct queue_map txq = {
+					.port_id = port->port_id,
+					.queue_id = w_idx % port->n_txq,
+					.enabled = port->started,
+				};
+				gr_vec_add(worker->txqs, txq);
+			}
+			w_idx++;
 		}
 	}
 }

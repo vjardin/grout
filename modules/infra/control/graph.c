@@ -187,14 +187,18 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 		ctx->lock = NULL;
 	}
 
-	// initialize the port_output node context to point to the port_output_invalid edge
+	// initialize the port_output node context
 	struct port_output_edges *out = rte_malloc(__func__, sizeof(*out), RTE_CACHE_LINE_SIZE);
 	if (out == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}
-	for (unsigned i = 0; i < ARRAY_DIM(out->edges); i++)
-		out->edges[i] = port_output_invalid;
+	for (unsigned i = 0; i < ARRAY_DIM(out->ports); i++) {
+		out->ports[i].first_edge = RTE_EDGE_ID_INVALID;
+		out->ports[i].txq_mask = 0;
+	}
+
+	uint16_t port_n_txq[RTE_MAX_ETHPORTS] = {0};
 
 	gr_vec_foreach_ref (qmap, worker->txqs) {
 		if (!qmap->enabled)
@@ -237,11 +241,23 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 
 		for (rte_edge_t edge = 0; edge < gr_vec_len(tx_node_names); edge++) {
 			if (strcmp(tx_node_names[edge], node_name) == 0) {
-				// update the port_output context data to map this port to the
-				// correct edge
-				out->edges[ctx->txq.port_id] = edge;
+				if (out->ports[qmap->port_id].first_edge == RTE_EDGE_ID_INVALID)
+					out->ports[qmap->port_id].first_edge = edge;
+				port_n_txq[qmap->port_id]++;
 				break;
 			}
+		}
+	}
+
+	// convert per-port txq counts to power-of-2 bitmasks for fast
+	// hash-based queue selection (& instead of %)
+	for (unsigned i = 0; i < ARRAY_DIM(out->ports); i++) {
+		if (port_n_txq[i] > 1) {
+			// round down to largest power of 2 <= n_txq
+			uint32_t p2 = UINT32_C(1) << rte_bsf32(rte_align32pow2(port_n_txq[i]));
+			if (p2 > port_n_txq[i])
+				p2 >>= 1;
+			out->ports[i].txq_mask = p2 - 1;
 		}
 	}
 

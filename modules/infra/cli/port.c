@@ -62,6 +62,9 @@ static uint64_t parse_port_args(
 	if (arg_u16(p, "N_RXQ", &port->n_rxq) == 0)
 		set_attrs |= GR_PORT_SET_N_RXQS;
 
+	if (arg_u16(p, "N_TXQ", &port->n_txq) == 0)
+		set_attrs |= GR_PORT_SET_N_TXQS;
+
 	if (arg_u16(p, "Q_SIZE", &port->rxq_size) == 0) {
 		port->txq_size = port->rxq_size;
 		set_attrs |= GR_PORT_SET_Q_SIZE;
@@ -124,11 +127,12 @@ out:
 	return ret;
 }
 
-#define PORT_ATTRS_CMD IFACE_ATTRS_CMD ",(mac MAC),(rxqs N_RXQ),(qsize Q_SIZE)"
+#define PORT_ATTRS_CMD IFACE_ATTRS_CMD ",(mac MAC),(rxqs N_RXQ),(txqs N_TXQ),(qsize Q_SIZE)"
 
 #define PORT_ATTRS_ARGS                                                                            \
 	IFACE_ATTRS_ARGS, with_help("Set the ethernet address.", ec_node_re("MAC", ETH_ADDR_RE)),  \
 		with_help("Number of Rx queues.", ec_node_uint("N_RXQ", 0, UINT16_MAX - 1, 10)),   \
+		with_help("Number of Tx queues.", ec_node_uint("N_TXQ", 0, UINT16_MAX - 1, 10)),   \
 		with_help("Rx/Tx queues size.", ec_node_uint("Q_SIZE", 0, UINT16_MAX - 1, 10))
 
 static int ctx_init(struct ec_node *root) {

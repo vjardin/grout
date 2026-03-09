@@ -38,7 +38,10 @@ GR_NODE_CTX_TYPE(tx_node_ctx, {
 });
 
 struct port_output_edges {
-	rte_edge_t edges[RTE_MAX_ETHPORTS];
+	struct {
+		rte_edge_t first_edge; // index into next_nodes[] for first port_tx clone
+		uint16_t txq_mask; // n_txq - 1 bitmask (n_txq must be power of 2)
+	} ports[RTE_MAX_ETHPORTS];
 };
 
 GR_MBUF_PRIV_DATA_TYPE(iface_mbuf_data, {

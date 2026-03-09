@@ -29,7 +29,10 @@ port_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		if (gr_mbuf_is_traced(mbuf))
 			gr_mbuf_trace_add(mbuf, node, 0);
 
-		edge = ctx->edges[port->port_id];
+		uint16_t pid = port->port_id;
+		edge = ctx->ports[pid].first_edge;
+		assert(edge != RTE_EDGE_ID_INVALID);
+		edge += mbuf->hash.rss & ctx->ports[pid].txq_mask;
 		rte_node_enqueue_x1(graph, node, edge, mbuf);
 	}
 
