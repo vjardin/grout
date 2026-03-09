@@ -348,7 +348,7 @@ struct gr_affinity_rxq_set_req {
 
 struct gr_infra_txq_rate_set_req {
 	uint16_t iface_id; // Must be a port interface.
-	uint16_t txq_id;
+	uint16_t txq_id; // UINT16_MAX to set all TX queues.
 	uint32_t rate_mbps; // 0 to disable rate limiting.
 };
 

@@ -117,6 +117,26 @@ static cmd_status_t txq_rate_set(struct gr_api_client *c, const struct ec_pnode 
 	return CMD_SUCCESS;
 }
 
+static cmd_status_t txq_rate_set_all(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_infra_txq_rate_set_req req;
+	struct gr_iface *iface = iface_from_name(c, arg_str(p, "NAME"));
+
+	if (iface == NULL)
+		return CMD_ERROR;
+
+	req.iface_id = iface->id;
+	free(iface);
+	req.txq_id = UINT16_MAX;
+
+	if (arg_u32(p, "RATE", &req.rate_mbps) < 0)
+		return CMD_ERROR;
+
+	if (gr_api_client_send_recv(c, GR_INFRA_TXQ_RATE_SET, sizeof(req), &req, NULL) < 0)
+		return CMD_ERROR;
+
+	return CMD_SUCCESS;
+}
+
 static const char *queue_state_name(uint8_t state) {
 	switch (state) {
 	case 0:
@@ -223,6 +243,22 @@ static int ctx_init(struct ec_node *root) {
 			ec_node_dyn("NAME", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
 		),
 		with_help("TX queue ID.", ec_node_uint("TXQ", 0, UINT16_MAX - 1, 10)),
+		with_help(
+			"Rate limit in Mbps (0 to disable).",
+			ec_node_uint("RATE", 0, UINT32_MAX, 10)
+		)
+	);
+	if (ret < 0)
+		return ret;
+	ret = CLI_COMMAND(
+		QMAP_CTX(root),
+		"rate NAME limit RATE",
+		txq_rate_set_all,
+		"Set rate limit on all TX queues in Mbps (0 to disable).",
+		with_help(
+			"Interface name.",
+			ec_node_dyn("NAME", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
+		),
 		with_help(
 			"Rate limit in Mbps (0 to disable).",
 			ec_node_uint("RATE", 0, UINT32_MAX, 10)

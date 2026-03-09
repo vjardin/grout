@@ -110,9 +110,23 @@ static struct api_out txq_rate_set(const void *request, struct api_ctx *) {
 		return api_out(errno, 0, NULL);
 
 	port = iface_info_port(iface);
-	ret = rte_eth_set_queue_rate_limit(port->port_id, req->txq_id, req->rate_mbps);
-	if (ret < 0)
-		return api_out(-ret, 0, NULL);
+
+	uint16_t start, end;
+	if (req->txq_id == UINT16_MAX) {
+		start = 0;
+		end = port->n_txq;
+	} else if (req->txq_id < port->n_txq) {
+		start = req->txq_id;
+		end = req->txq_id + 1;
+	} else {
+		return api_out(EINVAL, 0, NULL);
+	}
+
+	for (uint16_t q = start; q < end; q++) {
+		ret = rte_eth_set_queue_rate_limit(port->port_id, q, req->rate_mbps);
+		if (ret < 0)
+			return api_out(-ret, 0, NULL);
+	}
 
 	return api_out(0, 0, NULL);
 }
