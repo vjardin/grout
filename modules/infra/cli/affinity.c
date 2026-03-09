@@ -213,9 +213,6 @@ static int ctx_init(struct ec_node *root) {
 	);
 	if (ret < 0)
 		return ret;
-	ret = CLI_COMMAND(QMAP_CTX(root), "[show]", rxq_list, "Display DPDK port RXQ affinity.");
-	if (ret < 0)
-		return ret;
 	ret = CLI_COMMAND(
 		QMAP_CTX(root),
 		"set-rate NAME txq TXQ rate RATE",
@@ -243,6 +240,11 @@ static int ctx_init(struct ec_node *root) {
 			ec_node_dyn("NAME", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
 		)
 	);
+	if (ret < 0)
+		return ret;
+	// [show] must be last: the OR node returns the first match,
+	// and [show] matches 0 tokens (optional), shadowing later alternatives.
+	ret = CLI_COMMAND(QMAP_CTX(root), "[show]", rxq_list, "Display DPDK port RXQ affinity.");
 	if (ret < 0)
 		return ret;
 
