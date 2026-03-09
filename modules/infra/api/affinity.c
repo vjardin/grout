@@ -131,6 +131,22 @@ static struct api_out txq_rate_set(const void *request, struct api_ctx *) {
 	return api_out(0, 0, NULL);
 }
 
+static uint64_t queue_cpu_mask(uint16_t port_id, uint16_t queue_id, bool is_tx) {
+	struct queue_map *qmap;
+	struct worker *worker;
+	uint64_t mask = 0;
+
+	STAILQ_FOREACH (worker, &workers, next) {
+		gr_vec struct queue_map *qmaps = is_tx ? worker->txqs : worker->rxqs;
+		gr_vec_foreach_ref (qmap, qmaps) {
+			if (qmap->port_id == port_id && qmap->queue_id == queue_id
+			    && worker->cpu_id < 64)
+				mask |= UINT64_C(1) << worker->cpu_id;
+		}
+	}
+	return mask;
+}
+
 static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
 	const struct gr_infra_queue_list_req *req = request;
 	struct iface *iface = NULL;
@@ -146,6 +162,7 @@ static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
 				.iface_id = iface->id,
 				.queue_id = q,
 				.is_tx = false,
+				.cpu_mask = queue_cpu_mask(port->port_id, q, false),
 			};
 			if (rte_eth_rx_queue_info_get(port->port_id, q, &qinfo) == 0) {
 				info.nb_desc = qinfo.nb_desc;
@@ -155,15 +172,19 @@ static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
 		}
 		for (uint16_t q = 0; q < port->n_txq; q++) {
 			struct rte_eth_txq_info qinfo;
+			uint32_t tx_rate = 0;
 			struct gr_port_queue_info info = {
 				.iface_id = iface->id,
 				.queue_id = q,
 				.is_tx = true,
+				.cpu_mask = queue_cpu_mask(port->port_id, q, true),
 			};
 			if (rte_eth_tx_queue_info_get(port->port_id, q, &qinfo) == 0) {
 				info.nb_desc = qinfo.nb_desc;
 				info.queue_state = qinfo.queue_state;
 			}
+			if (rte_eth_get_queue_rate_limit(port->port_id, q, &tx_rate) == 0)
+				info.rate_mbps = tx_rate;
 			api_send(ctx, sizeof(info), &info);
 		}
 	}

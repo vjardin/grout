@@ -361,6 +361,8 @@ struct gr_port_queue_info {
 	uint16_t nb_desc;
 	uint8_t queue_state;
 	bool is_tx; // true for TX queue, false for RX queue.
+	uint64_t cpu_mask; // Bitmask of worker CPUs assigned to this queue.
+	uint32_t rate_mbps; // TX only: rate limit in Mbps (0 = unlimited).
 };
 
 // List port queue details.

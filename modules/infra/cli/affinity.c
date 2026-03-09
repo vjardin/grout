@@ -167,8 +167,10 @@ static cmd_status_t queue_list_show(struct gr_api_client *c, const struct ec_pno
 	scols_table_new_column(table, "IFACE", 0, 0);
 	scols_table_new_column(table, "DIR", 0, 0);
 	scols_table_new_column(table, "QUEUE", 0, 0);
+	scols_table_new_column(table, "LCORES", 0, 0);
 	scols_table_new_column(table, "NB_DESC", 0, 0);
 	scols_table_new_column(table, "STATE", 0, 0);
+	scols_table_new_column(table, "RATE", 0, 0);
 	scols_table_set_column_separator(table, "  ");
 
 	gr_api_client_stream_foreach (q, ret, c, GR_INFRA_QUEUE_LIST, sizeof(req), &req) {
@@ -182,8 +184,24 @@ static cmd_status_t queue_list_show(struct gr_api_client *c, const struct ec_pno
 		free(iface);
 		scols_line_sprintf(line, 1, "%s", q->is_tx ? "tx" : "rx");
 		scols_line_sprintf(line, 2, "%u", q->queue_id);
-		scols_line_sprintf(line, 3, "%u", q->nb_desc);
-		scols_line_sprintf(line, 4, "%s", queue_state_name(q->queue_state));
+		if (q->cpu_mask != 0) {
+			char buf[192] = "";
+			int off = 0;
+			for (unsigned i = 0; i < 64 && off < (int)sizeof(buf) - 4; i++) {
+				if (q->cpu_mask & (UINT64_C(1) << i))
+					off += snprintf(buf + off, sizeof(buf) - off,
+							"%s%u", off ? "," : "", i);
+			}
+			scols_line_set_data(line, 3, buf);
+		} else {
+			scols_line_sprintf(line, 3, "-");
+		}
+		scols_line_sprintf(line, 4, "%u", q->nb_desc);
+		scols_line_sprintf(line, 5, "%s", queue_state_name(q->queue_state));
+		if (q->is_tx && q->rate_mbps > 0)
+			scols_line_sprintf(line, 6, "%u Mbps", q->rate_mbps);
+		else
+			scols_line_sprintf(line, 6, "-");
 	}
 
 	scols_print_table(table);
