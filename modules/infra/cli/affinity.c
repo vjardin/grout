@@ -215,7 +215,7 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 	ret = CLI_COMMAND(
 		QMAP_CTX(root),
-		"set-rate NAME txq TXQ rate RATE",
+		"rate NAME txq TXQ limit RATE",
 		txq_rate_set,
 		"Set TX queue rate limit in Mbps (0 to disable).",
 		with_help(
@@ -232,13 +232,21 @@ static int ctx_init(struct ec_node *root) {
 		return ret;
 	ret = CLI_COMMAND(
 		QMAP_CTX(root),
-		"show-queues [NAME]",
+		"info NAME",
 		queue_list_show,
-		"Display per-queue details for ports.",
+		"Display per-queue details for a port.",
 		with_help(
-			"Interface name (all ports if omitted).",
+			"Port interface name.",
 			ec_node_dyn("NAME", complete_iface_names, INT2PTR(GR_IFACE_TYPE_PORT))
 		)
+	);
+	if (ret < 0)
+		return ret;
+	ret = CLI_COMMAND(
+		QMAP_CTX(root),
+		"info",
+		queue_list_show,
+		"Display per-queue details for all ports."
 	);
 	if (ret < 0)
 		return ret;
