@@ -4,6 +4,7 @@
 #include "ipip_priv.h"
 
 #include <gr_datapath.h>
+#include <gr_dp_capture.h>
 #include <gr_eth.h>
 #include <gr_graph.h>
 #include <gr_ip4_control.h>
@@ -76,6 +77,11 @@ ipip_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		eth_data->domain = ETH_DOMAIN_LOCAL;
 		edge = IP_INPUT;
 		IFACE_STATS_INC(rx, mbuf, ipip);
+		if (unlikely(ipip->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				&mbuf, 1, GR_CAPTURE_DIR_IN, ipip
+			);
 next:
 		if (gr_mbuf_is_traced(mbuf) || (ipip && ipip->flags & GR_IFACE_F_PACKET_TRACE)) {
 			struct trace_ipip_data *t = gr_mbuf_trace_add(mbuf, node, sizeof(*t));

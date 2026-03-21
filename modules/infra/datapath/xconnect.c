@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2025 Christophe Fontaine
 
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_iface.h>
 #include <gr_infra.h>
@@ -32,12 +33,22 @@ xconnect_process(struct rte_graph *graph, struct rte_node *node, void **objs, ui
 		peer = iface_from_id(iface->domain_id);
 
 		IFACE_STATS_INC(rx, mbuf, iface);
+		if (unlikely(iface->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				&mbuf, 1, GR_CAPTURE_DIR_IN, iface
+			);
 
 		if (peer != NULL && peer->type == GR_IFACE_TYPE_PORT) {
 			mbuf_data(mbuf)->iface = peer;
 			edge = OUTPUT;
 
 			IFACE_STATS_INC(tx, mbuf, peer);
+			if (unlikely(peer->flags & GR_IFACE_F_CAPTURE))
+				capture_enqueue(
+					UINT16_MAX, UINT16_MAX,
+					&mbuf, 1, GR_CAPTURE_DIR_OUT, peer
+				);
 		} else {
 			edge = NO_PORT;
 		}

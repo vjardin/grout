@@ -3,6 +3,7 @@
 
 #include <gr_bond.h>
 #include <gr_config.h>
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_log.h>
 #include <gr_mbuf.h>
@@ -191,6 +192,12 @@ uint16_t rx_virtio_process(struct rte_graph *graph, struct rte_node *node, void 
 
 	trace_log(RXTX_F_VIRTIO | RXTX_F_VLAN_OFFLOAD, ctx->iface, node, mbufs, rx);
 
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id, ctx->rxq.queue_id,
+			mbufs, rx, GR_CAPTURE_DIR_IN, ctx->iface
+		);
+
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);
 
@@ -225,6 +232,16 @@ uint16_t rx_offload_process(struct rte_graph *graph, struct rte_node *node, void
 	}
 
 	trace_log(RXTX_F_VLAN_OFFLOAD, ctx->iface, node, mbufs, rx);
+
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id,
+			ctx->rxq.queue_id,
+			mbufs,
+			rx,
+			GR_CAPTURE_DIR_IN,
+			ctx->iface
+		);
 
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);
@@ -261,6 +278,16 @@ uint16_t rx_process(struct rte_graph *graph, struct rte_node *node, void **, uin
 	}
 
 	trace_log(0, ctx->iface, node, mbufs, rx);
+
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id,
+			ctx->rxq.queue_id,
+			mbufs,
+			rx,
+			GR_CAPTURE_DIR_IN,
+			ctx->iface
+		);
 
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);
@@ -310,6 +337,12 @@ uint16_t rx_bond_virtio_process(struct rte_graph *graph, struct rte_node *node, 
 
 	trace_log(RXTX_F_VIRTIO | RXTX_F_VLAN_OFFLOAD | RXTX_F_BOND, ctx->iface, node, mbufs, rx);
 
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id, ctx->rxq.queue_id,
+			mbufs, rx, GR_CAPTURE_DIR_IN, ctx->iface
+		);
+
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);
 
@@ -356,6 +389,16 @@ rx_bond_offload_process(struct rte_graph *graph, struct rte_node *node, void **,
 	}
 
 	trace_log(RXTX_F_VLAN_OFFLOAD | RXTX_F_BOND, ctx->iface, node, mbufs, rx);
+
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id,
+			ctx->rxq.queue_id,
+			mbufs,
+			rx,
+			GR_CAPTURE_DIR_IN,
+			ctx->iface
+		);
 
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);
@@ -404,6 +447,16 @@ uint16_t rx_bond_process(struct rte_graph *graph, struct rte_node *node, void **
 	}
 
 	trace_log(RXTX_F_BOND, ctx->iface, node, mbufs, rx);
+
+	if (unlikely(ctx->iface->flags & GR_IFACE_F_CAPTURE))
+		capture_enqueue(
+			ctx->rxq.port_id,
+			ctx->rxq.queue_id,
+			mbufs,
+			rx,
+			GR_CAPTURE_DIR_IN,
+			ctx->iface
+		);
 
 	node->idx = rx;
 	rte_node_next_stream_move(graph, node, IFACE_INPUT);

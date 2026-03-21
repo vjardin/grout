@@ -2,6 +2,7 @@
 // Copyright (c) 2025 Robin Jarry
 
 #include <gr_bond.h>
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_iface.h>
 #include <gr_log.h>
@@ -226,6 +227,11 @@ bond_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		}
 
 		IFACE_STATS_INC(tx, mbuf, member);
+		if (unlikely(member->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				&mbuf, 1, GR_CAPTURE_DIR_OUT, member
+			);
 
 		edge = PORT_OUTPUT;
 next:

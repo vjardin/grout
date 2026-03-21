@@ -2,6 +2,7 @@
 // Copyright (c) 2025 Maxime Leroy, Free Mobile
 
 #include <gr_datapath.h>
+#include <gr_dp_capture.h>
 #include <gr_eth.h>
 #include <gr_graph.h>
 #include <gr_ip4_datapath.h>
@@ -47,6 +48,11 @@ xvrf_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16
 
 		// XXX: increment tx stats on source VRF
 		IFACE_STATS_INC(rx, m, eth_data->iface);
+		if (unlikely(eth_data->iface->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				&m, 1, GR_CAPTURE_DIR_IN, eth_data->iface
+			);
 
 		if (gr_mbuf_is_traced(m) || (eth_data->iface->flags & GR_IFACE_F_PACKET_TRACE)) {
 			struct trace_vrf_data *t = gr_mbuf_trace_add(m, node, sizeof(*t));

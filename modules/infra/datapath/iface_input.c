@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Robin Jarry
 
 #include <gr_config.h>
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_iface.h>
 #include <gr_log.h>
@@ -90,6 +91,13 @@ iface_input_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		}
 
 		IFACE_STATS_INC(rx, m, d->iface);
+
+		if (unlikely(d->iface->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				(struct rte_mbuf **)&objs[i], 1,
+				GR_CAPTURE_DIR_IN, d->iface
+			);
 
 		edge = edges[d->iface->mode];
 next:

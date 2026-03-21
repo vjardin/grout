@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2026 Robin Jarry
 
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_iface.h>
 #include <gr_log.h>
@@ -67,6 +68,13 @@ static uint16_t iface_output_process(
 		m = objs[i];
 		d = iface_mbuf_data(m);
 		iface = d->iface;
+
+		if (unlikely(iface->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				(struct rte_mbuf **)&objs[i], 1,
+				GR_CAPTURE_DIR_OUT, iface
+			);
 
 		if (iface->type == GR_IFACE_TYPE_VLAN) {
 			const struct iface_info_vlan *vlan = iface_info_vlan(iface);
