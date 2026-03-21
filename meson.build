@@ -121,6 +121,18 @@ subdir('modules')
 subdir('cli')
 subdir('frr')
 
+# rte_pmd_mlx5.h is a DPDK driver header, not exposed via dpdk_dep.
+# When DPDK is a subproject, add the driver source path explicitly.
+# When DPDK is external (system package), check if the header is installed.
+if dpdk_dep.type_name() == 'internal'
+  _mlx5_hdr = meson.project_source_root() / 'subprojects' / 'dpdk' / 'drivers' / 'net' / 'mlx5' / 'rte_pmd_mlx5.h'
+  if import('fs').is_file(_mlx5_hdr)
+    grout_cflags += ['-DHAVE_RTE_PMD_MLX5', '-I' + meson.project_source_root() / 'subprojects' / 'dpdk' / 'drivers' / 'net' / 'mlx5']
+  endif
+elif compiler.has_header('rte_pmd_mlx5.h', dependencies: dpdk_dep)
+  grout_cflags += ['-DHAVE_RTE_PMD_MLX5']
+endif
+
 grout_exe = executable(
   'grout', src,
   include_directories: inc + api_inc,

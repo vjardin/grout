@@ -12,8 +12,11 @@
 #include <gr_worker.h>
 
 #include <rte_ethdev.h>
+#ifdef HAVE_RTE_PMD_MLX5
 #include <rte_pmd_mlx5.h>
+#endif
 
+#include <dlfcn.h>
 #include <errno.h>
 #include <sys/queue.h>
 #include <unistd.h>
@@ -194,6 +197,7 @@ static struct api_out queue_list(const void *request, struct api_ctx *ctx) {
 }
 
 static struct api_out pp_rate_table_get(const void *request, struct api_ctx *) {
+#ifdef HAVE_RTE_PMD_MLX5
 	const struct gr_infra_pp_rate_table_req *req = request;
 	struct gr_infra_pp_rate_table_resp *resp;
 	struct rte_pmd_mlx5_pp_rate_table_info pmd_info;
@@ -201,11 +205,18 @@ static struct api_out pp_rate_table_get(const void *request, struct api_ctx *) {
 	struct iface_info_port *port;
 	int ret;
 
+	// Resolve at runtime — the mlx5 driver .so is loaded by DPDK's
+	// PMD mechanism, not linked into grout at build time.
+	typedef int (*query_fn_t)(uint16_t, struct rte_pmd_mlx5_pp_rate_table_info *);
+	query_fn_t query_fn = dlsym(RTLD_DEFAULT, "rte_pmd_mlx5_pp_rate_table_query");
+	if (query_fn == NULL)
+		return api_out(ENOTSUP, 0, NULL);
+
 	if (iface == NULL)
 		return api_out(errno, 0, NULL);
 
 	port = iface_info_port(iface);
-	ret = rte_pmd_mlx5_pp_rate_table_query(port->port_id, &pmd_info);
+	ret = query_fn(port->port_id, &pmd_info);
 	if (ret < 0)
 		return api_out(-ret, 0, NULL);
 
@@ -216,6 +227,10 @@ static struct api_out pp_rate_table_get(const void *request, struct api_ctx *) {
 	resp->total = pmd_info.total;
 	resp->used = pmd_info.used;
 	return api_out(0, sizeof(*resp), resp);
+#else
+	(void)request;
+	return api_out(ENOTSUP, 0, NULL);
+#endif
 }
 
 RTE_INIT(_init) {
