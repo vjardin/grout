@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Robin Jarry
 
 #include <gr_config.h>
+#include <gr_dp_capture.h>
 #include <gr_graph.h>
 #include <gr_iface.h>
 #include <gr_log.h>
@@ -61,6 +62,18 @@ static inline bool tx_begin(
 			const struct iface *iface = mbuf_data(m)->iface;
 			trace_log_packet(m, "tx", iface->name);
 		}
+	}
+
+	if (unlikely(iface->flags & GR_IFACE_F_CAPTURE)) {
+		const struct tx_node_ctx *tx = tx_node_ctx(node);
+		capture_enqueue(
+			tx->txq.port_id,
+			tx->txq.queue_id,
+			(struct rte_mbuf **)objs,
+			nb_objs,
+			GR_CAPTURE_DIR_OUT,
+			iface
+		);
 	}
 
 	return true;

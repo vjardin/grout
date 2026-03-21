@@ -4,6 +4,7 @@
 #include "ipip_priv.h"
 
 #include <gr_datapath.h>
+#include <gr_dp_capture.h>
 #include <gr_eth.h>
 #include <gr_graph.h>
 #include <gr_ip4_control.h>
@@ -78,6 +79,11 @@ ipip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 		ip_set_fields(outer, &tunnel);
 
 		IFACE_STATS_INC(tx, mbuf, iface);
+		if (unlikely(iface->flags & GR_IFACE_F_CAPTURE))
+			capture_enqueue(
+				UINT16_MAX, UINT16_MAX,
+				&mbuf, 1, GR_CAPTURE_DIR_OUT, iface
+			);
 
 		// Resolve nexthop for the encapsulated packet.
 		ip_data->nh = fib4_lookup(iface->vrf_id, ipip->remote);
