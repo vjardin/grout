@@ -34,6 +34,7 @@ typedef enum : uint16_t {
 	GR_IFACE_F_PACKET_TRACE = GR_BIT16(2),
 	GR_IFACE_F_SNAT_STATIC = GR_BIT16(3),
 	GR_IFACE_F_SNAT_DYNAMIC = GR_BIT16(4),
+	GR_IFACE_F_CAPTURE = GR_BIT16(5),
 } gr_iface_flags_t;
 
 // Interface state flags.
@@ -493,6 +494,58 @@ struct gr_affinity_cpu_set_req {
 };
 
 // struct gr_affinity_cpu_set_resp { };
+
+// packet capture //////////////////////////////////////////////////////////////
+
+// Start packet capture on an interface or all interfaces.
+// Response carries the shared memory path for the capture ring.
+#define GR_CAPTURE_START REQUEST_TYPE(GR_INFRA_MODULE, 0x0080)
+
+struct gr_capture_start_req {
+	uint16_t iface_id; // GR_IFACE_ID_UNDEF = all port interfaces.
+	uint32_t snap_len; // 0 = default (4096).
+};
+
+#define GR_CAPTURE_SHM_PATH_SIZE 108
+
+struct gr_capture_start_resp {
+	char shm_path[GR_CAPTURE_SHM_PATH_SIZE]; // POSIX shm name
+};
+
+// Set BPF filter on the active capture session.
+// Sends classic BPF bytecode (from pcap_compile) to be JIT-compiled
+// via rte_bpf and run in the datapath. Only matching packets enter
+// the ring. Send with bpf_len=0 to clear the filter.
+#define GR_CAPTURE_SET_FILTER REQUEST_TYPE(GR_INFRA_MODULE, 0x0083)
+
+struct gr_capture_set_filter_req {
+	uint16_t bpf_len; // number of bpf_insn, 0 = clear filter
+	// Followed by bpf_len * 8 bytes of classic BPF instructions.
+	// Each instruction is { uint16_t code; uint8_t jt, jf; uint32_t k; }.
+	uint8_t bpf_insns[];
+};
+
+// struct gr_capture_set_filter_resp { };
+
+// Stop the active packet capture session.
+#define GR_CAPTURE_STOP REQUEST_TYPE(GR_INFRA_MODULE, 0x0081)
+
+// struct gr_capture_stop_req { };
+// struct gr_capture_stop_resp { };
+
+// List active captures.
+#define GR_CAPTURE_LIST REQUEST_TYPE(GR_INFRA_MODULE, 0x0082)
+
+// struct gr_capture_list_req { };
+
+struct gr_capture_info {
+	uint16_t iface_id;
+	uint32_t snap_len;
+	uint64_t pkt_count;
+	uint64_t drops;
+};
+
+STREAM_RESP(struct gr_capture_info);
 
 // Helper function to convert iface type enum to string
 static inline const char *gr_iface_type_name(gr_iface_type_t type) {
