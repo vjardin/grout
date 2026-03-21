@@ -21,14 +21,12 @@
 ///
 
 #include <errno.h>
-#include <fcntl.h>
 #include <pcap/pcap-plugin.h>
 #include <pcap/pcap.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -284,29 +282,22 @@ static int pcap_grout_activate(pcap_t *p) {
 	creq.snap_len = (uint32_t)snapshot;
 
 	void *resp = NULL;
-	if (gr_api_client_send_recv(pg->client, GR_CAPTURE_START, sizeof(creq), &creq, &resp) < 0) {
+	int shm_fd = -1;
+	if (gr_api_client_send_recv_fd(
+		    pg->client, GR_CAPTURE_START, sizeof(creq), &creq, &resp, &shm_fd
+	    ) < 0) {
 		pcap_plugin_set_errbuf(p, "grout: capture start failed: %s", strerror(errno));
 		goto fail;
 	}
 
 	struct gr_capture_start_resp *cresp = resp;
-	char shm_path[GR_CAPTURE_SHM_PATH_SIZE];
-	memset(shm_path, 0, sizeof(shm_path));
-	memcpy(shm_path, cresp->shm_path, sizeof(cresp->shm_path));
+	pg->ring_size = cresp->shm_size;
 	free(resp);
 
-	int shm_fd = shm_open(shm_path, O_RDWR, 0);
 	if (shm_fd < 0) {
-		pcap_plugin_set_errbuf(p, "grout: shm_open(%s): %s", shm_path, strerror(errno));
+		pcap_plugin_set_errbuf(p, "grout: server did not send capture fd");
 		goto fail;
 	}
-	struct stat st;
-	if (fstat(shm_fd, &st) < 0) {
-		close(shm_fd);
-		pcap_plugin_set_errbuf(p, "grout: fstat: %s", strerror(errno));
-		goto fail;
-	}
-	pg->ring_size = st.st_size;
 	pg->ring = mmap(NULL, pg->ring_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
 	close(shm_fd);
 	if (pg->ring == MAP_FAILED) {

@@ -455,7 +455,7 @@ struct gr_affinity_cpu_set_req {
 // packet capture //////////////////////////////////////////////////////////////
 
 // Start packet capture on an interface or all interfaces.
-// Response carries the shared memory path for the capture ring.
+// Response carries the shm size; the capture ring fd is passed via SCM_RIGHTS.
 #define GR_CAPTURE_START REQUEST_TYPE(GR_INFRA_MODULE, 0x0080)
 
 struct gr_capture_start_req {
@@ -463,10 +463,8 @@ struct gr_capture_start_req {
 	uint32_t snap_len; // 0 = default (4096).
 };
 
-#define GR_CAPTURE_SHM_PATH_SIZE 108
-
 struct gr_capture_start_resp {
-	char shm_path[GR_CAPTURE_SHM_PATH_SIZE]; // POSIX shm name
+	size_t shm_size; // size to mmap from the fd
 };
 
 // Set BPF filter on the active capture session.

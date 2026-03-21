@@ -13,8 +13,8 @@ struct rte_bpf;
 struct rte_bpf_jit;
 
 struct capture_session {
-	struct gr_capture_ring *ring; // mmap'd shm pointer
-	char shm_path[GR_CAPTURE_SHM_PATH_SIZE];
+	struct gr_capture_ring *ring; // mmap'd pointer
+	int shm_fd; // memfd kept open for fd passing to clients
 	size_t shm_size;
 	uint16_t iface_id; // GR_IFACE_ID_UNDEF = all
 	uint32_t snap_len;
