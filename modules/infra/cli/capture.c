@@ -10,12 +10,10 @@
 #include <ecoli.h>
 
 #include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 // pcapng constants — no standard C header exists for the format.
@@ -188,33 +186,24 @@ static cmd_status_t capture_dump(struct gr_api_client *c, const struct ec_pnode 
 	if (arg_u32(p, "SNAPLEN", &req.snap_len) < 0 && errno != ENOENT)
 		return CMD_ERROR;
 
-	// Send capture start and get shm path.
+	// Send capture start and receive the ring fd via SCM_RIGHTS.
 	void *resp_ptr = NULL;
-	if (gr_api_client_send_recv(
-		    c, GR_CAPTURE_START, sizeof(req), &req, &resp_ptr
+	int shm_fd = -1;
+	if (gr_api_client_send_recv_fd(
+		    c, GR_CAPTURE_START, sizeof(req), &req, &resp_ptr, &shm_fd
 	    ) < 0)
 		return CMD_ERROR;
 
 	struct gr_capture_start_resp *resp = resp_ptr;
-	char shm_path[GR_CAPTURE_SHM_PATH_SIZE];
-	memccpy(shm_path, resp->shm_path, 0, sizeof(shm_path));
-	shm_path[sizeof(shm_path) - 1] = '\0';
+	size_t ring_size = resp->shm_size;
 	free(resp_ptr);
 
-	// Open and map the shared ring.
-	int shm_fd = shm_open(shm_path, O_RDWR, 0);
 	if (shm_fd < 0) {
-		errorf("shm_open(%s): %s", shm_path, strerror(errno));
-		goto stop;
-	}
-	struct stat st;
-	if (fstat(shm_fd, &st) < 0) {
-		errorf("fstat: %s", strerror(errno));
-		close(shm_fd);
+		errorf("server did not send capture fd");
 		goto stop;
 	}
 	struct gr_capture_ring *ring = mmap(
-		NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0
+		NULL, ring_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0
 	);
 	close(shm_fd);
 	if (ring == MAP_FAILED) {
@@ -223,19 +212,19 @@ static cmd_status_t capture_dump(struct gr_api_client *c, const struct ec_pnode 
 	}
 	if (ring->magic != GR_CAPTURE_RING_MAGIC) {
 		errorf("invalid capture ring magic");
-		munmap(ring, st.st_size);
+		munmap(ring, ring_size);
 		goto stop;
 	}
 
 	// Write pcapng file header (SHB + IDBs).
 	if (pcapng_write_shb(stdout) < 0) {
-		munmap(ring, st.st_size);
+		munmap(ring, ring_size);
 		goto stop;
 	}
 	const struct gr_capture_iface *ifaces = gr_capture_ring_ifaces_const(ring);
 	for (uint16_t i = 0; i < ring->n_ifaces; i++) {
 		if (pcapng_write_idb(stdout, ifaces[i].name, ring->snap_len) < 0) {
-			munmap(ring, st.st_size);
+			munmap(ring, ring_size);
 			goto stop;
 		}
 	}
@@ -270,7 +259,7 @@ static cmd_status_t capture_dump(struct gr_api_client *c, const struct ec_pnode 
 
 	sigaction(SIGINT, &old_int, NULL);
 	sigaction(SIGTERM, &old_term, NULL);
-	munmap(ring, st.st_size);
+	munmap(ring, ring_size);
 
 stop:
 	gr_api_client_send_recv(c, GR_CAPTURE_STOP, 0, NULL, NULL);

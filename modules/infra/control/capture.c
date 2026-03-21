@@ -18,8 +18,6 @@
 #endif
 
 #include <errno.h>
-#include <fcntl.h>
-#include <glob.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,7 +30,6 @@
 _Atomic(struct capture_session *) iface_capture[GR_MAX_IFACES];
 
 static struct capture_session *active_capture;
-static unsigned capture_seq;
 
 static void capture_set_flags(struct capture_session *s) {
 	if (s->iface_id != GR_IFACE_ID_UNDEF) {
@@ -121,26 +118,20 @@ struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_l
 	uint32_t slot_count = GR_CAPTURE_SLOT_COUNT_DEFAULT;
 	s->shm_size = gr_capture_ring_memsize(slot_count, n_ifaces);
 
-	snprintf(s->shm_path, sizeof(s->shm_path), "/grout-capture-%u", capture_seq++);
-
-	int fd = shm_open(s->shm_path, O_CREAT | O_RDWR | O_EXCL, 0644);
-	if (fd < 0) {
-		LOG(ERR, "shm_open(%s): %s", s->shm_path, strerror(errno));
+	s->shm_fd = memfd_create("grout-capture", MFD_CLOEXEC);
+	if (s->shm_fd < 0) {
+		LOG(ERR, "memfd_create: %s", strerror(errno));
 		goto err_free;
 	}
-	if (ftruncate(fd, s->shm_size) < 0) {
-		LOG(ERR, "ftruncate(%s): %s", s->shm_path, strerror(errno));
-		close(fd);
-		shm_unlink(s->shm_path);
-		goto err_free;
+	if (ftruncate(s->shm_fd, s->shm_size) < 0) {
+		LOG(ERR, "ftruncate: %s", strerror(errno));
+		goto err_close;
 	}
-	s->ring = mmap(NULL, s->shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-	close(fd);
+	s->ring = mmap(NULL, s->shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, s->shm_fd, 0);
 	if (s->ring == MAP_FAILED) {
-		LOG(ERR, "mmap(%s): %s", s->shm_path, strerror(errno));
-		shm_unlink(s->shm_path);
+		LOG(ERR, "mmap: %s", strerror(errno));
 		s->ring = NULL;
-		goto err_free;
+		goto err_close;
 	}
 
 	// Initialize ring header.
@@ -173,10 +164,11 @@ struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_l
 	active_capture = s;
 	capture_set_flags(s);
 
-	LOG(INFO, "capture started iface_id=%u snap_len=%u shm=%s",
-	    iface_id, s->snap_len, s->shm_path);
+	LOG(INFO, "capture started iface_id=%u snap_len=%u", iface_id, s->snap_len);
 	return s;
 
+err_close:
+	close(s->shm_fd);
 err_free:
 	free(s);
 	return NULL;
@@ -263,33 +255,20 @@ void capture_session_stop(struct capture_session *s) {
 	if (s->ring != NULL) {
 		// Signal consumers that the session is gone. Consumers
 		// check ring->magic in their poll loop and exit when
-		// it changes. The mmap survives shm_unlink so this
-		// write is visible to any process still mapped.
+		// it changes. The mmap survives close so this write
+		// is visible to any process still mapped.
 		s->ring->magic = 0;
 		munmap(s->ring, s->shm_size);
-		shm_unlink(s->shm_path);
 	}
+	if (s->shm_fd >= 0)
+		close(s->shm_fd);
 	free(s);
 
 	LOG(INFO, "capture stopped (bpf_passed=%lu bpf_filtered=%lu)",
 	    bpf_passed, bpf_filtered);
 }
 
-static void capture_cleanup_stale(void) {
-	glob_t g;
-	if (glob("/dev/shm/grout-capture-*", GLOB_NOSORT, NULL, &g) == 0) {
-		for (size_t i = 0; i < g.gl_pathc; i++) {
-			const char *path = g.gl_pathv[i];
-			const char *name = path + strlen("/dev/shm");
-			LOG(NOTICE, "cleaning up stale capture shm %s", name);
-			shm_unlink(name);
-		}
-		globfree(&g);
-	}
-}
-
 static void capture_init(struct event_base *) {
-	capture_cleanup_stale();
 }
 
 static void capture_fini(struct event_base *) {

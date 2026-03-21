@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static struct api_out capture_start(const void *request, struct api_ctx *) {
 	const struct gr_capture_start_req *req = request;
@@ -17,15 +18,23 @@ static struct api_out capture_start(const void *request, struct api_ctx *) {
 	if (s == NULL)
 		return api_out(errno, 0, NULL);
 
-	struct gr_capture_start_resp *resp = malloc(sizeof(*resp));
+	// dup the fd so the session keeps its own copy; the server
+	// closes the returned fd after sending it via SCM_RIGHTS.
+	int fd = dup(s->shm_fd);
+	if (fd < 0) {
+		capture_session_stop(s);
+		return api_out(errno, 0, NULL);
+	}
+
+	struct gr_capture_start_resp *resp = calloc(1, sizeof(*resp));
 	if (resp == NULL) {
+		close(fd);
 		capture_session_stop(s);
 		return api_out(ENOMEM, 0, NULL);
 	}
-	memset(resp, 0, sizeof(*resp));
-	memccpy(resp->shm_path, s->shm_path, 0, sizeof(resp->shm_path));
+	resp->shm_size = s->shm_size;
 
-	return api_out(0, sizeof(*resp), resp);
+	return api_out_fd(0, sizeof(*resp), resp, fd);
 }
 
 static struct api_out capture_stop(const void * /*request*/, struct api_ctx *) {
