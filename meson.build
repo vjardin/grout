@@ -120,6 +120,7 @@ subdir('main')
 subdir('modules')
 subdir('cli')
 subdir('frr')
+subdir('pcap')
 
 # rte_pmd_mlx5.h is a DPDK driver header, not exposed via dpdk_dep.
 # When DPDK is a subproject, add the driver source path explicitly.

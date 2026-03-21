@@ -20,3 +20,13 @@ option(
   'dpdk_static', type: 'boolean', value: false,
   description: 'If set to true, link against static DPDK libraries.',
 )
+
+option(
+  'pcap', type: 'feature', value: 'auto',
+  description: 'Build pcap-grout.so libpcap plugin. If set to "auto", only build if libpcap-dev is found.',
+)
+
+option(
+  'pcap_srcdir', type: 'string', value: '',
+  description: 'Path to libpcap source tree (for pcap/pcap-plugin.h). Auto-detected from ../libpcap if empty.',
+)
