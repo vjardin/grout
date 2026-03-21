@@ -4,6 +4,7 @@
 api_headers += files(
   'gr_api.h',
   'gr_api_client_impl.h',
+  'gr_capture_ring.h',
   'gr_bitops.h',
   'gr_clock.h',
   'gr_errno.h',
@@ -34,6 +35,10 @@ tests += [
   },
   {
     'sources': files('string_test.c', 'string.c'),
+    'link_args': [],
+  },
+  {
+    'sources': files('capture_ring_test.c'),
     'link_args': [],
   },
 ]
