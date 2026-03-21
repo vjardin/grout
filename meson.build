@@ -120,6 +120,7 @@ subdir('main')
 subdir('modules')
 subdir('cli')
 subdir('frr')
+subdir('pcap')
 
 grout_exe = executable(
   'grout', src,
