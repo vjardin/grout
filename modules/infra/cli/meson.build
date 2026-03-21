@@ -5,6 +5,7 @@ cli_src += files(
   'address.c',
   'affinity.c',
   'bond.c',
+  'capture.c',
   'events.c',
   'graph.c',
   'iface.c',
