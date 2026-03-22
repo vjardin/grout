@@ -503,7 +503,10 @@ struct gr_affinity_cpu_set_req {
 
 struct gr_capture_start_req {
 	uint16_t iface_id; // GR_IFACE_ID_UNDEF = all port interfaces.
+	uint16_t _pad;
 	uint32_t snap_len; // 0 = default (4096).
+	uint8_t ts_clock; // GR_CAPTURE_TS_TSC or GR_CAPTURE_TS_NS.
+	uint8_t _reserved[3];
 };
 
 struct gr_capture_start_resp {

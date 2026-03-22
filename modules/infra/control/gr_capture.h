@@ -24,12 +24,16 @@ struct capture_session {
 	// BPF filter (JIT-compiled). NULL = capture all packets.
 	struct rte_bpf *bpf;
 	uint64_t (*bpf_jit_func)(void *); // cached JIT function pointer, NULL if no filter
+	// HW timestamp support (RX only).
+	bool hw_timestamp;   // use mbuf HW timestamp instead of rte_rdtsc()
+	int ts_dynfield_off; // mbuf dynfield offset for RX timestamp
+	uint64_t ts_dynflag; // mbuf ol_flags bit for RX timestamp
 };
 
 // Per-interface capture session pointer, read atomically by datapath.
 extern _Atomic(struct capture_session *) iface_capture[GR_MAX_IFACES];
 
-struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_len);
+struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_len, uint8_t ts_clock);
 void capture_session_stop(struct capture_session *s);
 struct capture_session *capture_session_get(void);
 int capture_session_set_filter(struct capture_session *s, const void *bpf_insns, uint16_t bpf_len);

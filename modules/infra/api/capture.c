@@ -14,7 +14,7 @@
 static struct api_out capture_start(const void *request, struct api_ctx *) {
 	const struct gr_capture_start_req *req = request;
 
-	struct capture_session *s = capture_session_start(req->iface_id, req->snap_len);
+	struct capture_session *s = capture_session_start(req->iface_id, req->snap_len, req->ts_clock);
 	if (s == NULL)
 		return api_out(errno, 0, NULL);
 

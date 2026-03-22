@@ -10,6 +10,7 @@
 #include <gr_port.h>
 
 #include <rte_cycles.h>
+#include <rte_mbuf_dyn.h>
 
 #ifdef RTE_LIB_BPF
 #include <rte_bpf.h>
@@ -84,7 +85,7 @@ struct capture_session *capture_session_get(void) {
 	return active_capture;
 }
 
-struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_len) {
+struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_len, uint8_t ts_clock) {
 	struct capture_session *s;
 
 	if (active_capture != NULL) {
@@ -147,6 +148,8 @@ struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_l
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	s->ring->realtime_ref_ns = (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+	LOG(INFO, "TSC calibration: tsc_hz=%lu tsc_ref=%lu realtime_ref=%lu ns",
+	    s->ring->tsc_hz, s->ring->tsc_ref, s->ring->realtime_ref_ns);
 
 	// Fill interface table.
 	struct gr_capture_iface *itbl = gr_capture_ring_ifaces(s->ring);
@@ -161,10 +164,84 @@ struct capture_session *capture_session_start(uint16_t iface_id, uint32_t snap_l
 		idx++;
 	}
 
+	// Set up HW timestamps if requested by the consumer.
+	//
+	// The ts_clock value comes from the capture start API request,
+	// which the pcap-grout.so plugin sets based on tcpdump's -j flag:
+	//   tcpdump -j adapter          → GR_CAPTURE_TS_NS      (no calibration)
+	//   tcpdump -j adapter_unsynced → GR_CAPTURE_TS_RAW_NIC (100ms calibration)
+	//   tcpdump (default)           → GR_CAPTURE_TS_TSC      (skips this block)
+	//
+	// GR_CAPTURE_TS_NS: the mlx5 driver already converts the NIC clock
+	// to real-time nanoseconds (via tx_pp or wait_on_time). No extra
+	// calibration needed — capture starts instantly.
+	//
+	// GR_CAPTURE_TS_RAW_NIC: raw NIC clock ticks are stored. The consumer
+	// needs nic_hz to convert, so we measure it here with a 100ms delay.
+	// This only runs when the user explicitly requests -j adapter_unsynced.
+	if (ts_clock == GR_CAPTURE_TS_NS || ts_clock == GR_CAPTURE_TS_RAW_NIC) {
+		int off = rte_mbuf_dynfield_lookup("rte_dynfield_timestamp", NULL);
+		int bit = rte_mbuf_dynflag_lookup("rte_dynflag_rx_timestamp", NULL);
+		if (off >= 0 && bit >= 0) {
+			s->hw_timestamp = true;
+			s->ts_dynfield_off = off;
+			s->ts_dynflag = 1ULL << bit;
+			s->ring->ts_clock = ts_clock;
+			if (ts_clock == GR_CAPTURE_TS_RAW_NIC) {
+				// Calibrate NIC clock: two paired reads with a
+				// 100ms delay for a stable frequency estimate.
+				uint16_t port_id = UINT16_MAX;
+				struct iface *i = NULL;
+				uint64_t tmp;
+				while ((i = iface_next(GR_IFACE_TYPE_PORT, i)) != NULL) {
+					const struct iface_info_port *port = iface_info_port(i);
+					if (rte_eth_read_clock(port->port_id, &tmp) == 0) {
+						port_id = port->port_id;
+						break;
+					}
+				}
+				if (port_id != UINT16_MAX) {
+					uint64_t nic_start, nic_end;
+					struct timespec t_start, t_end;
+					rte_eth_read_clock(port_id, &nic_start);
+					clock_gettime(CLOCK_REALTIME, &t_start);
+					usleep(100000); // 100ms
+					rte_eth_read_clock(port_id, &nic_end);
+					clock_gettime(CLOCK_REALTIME, &t_end);
+					uint64_t wall_ns =
+						(uint64_t)(t_end.tv_sec - t_start.tv_sec) * 1000000000ULL
+						+ t_end.tv_nsec - t_start.tv_nsec;
+					if (wall_ns > 0 && nic_end > nic_start)
+						s->ring->nic_hz = (nic_end - nic_start)
+							* 1000000000ULL / wall_ns;
+					s->ring->nic_ref = nic_end;
+					s->ring->realtime_ref_ns =
+						(uint64_t)t_end.tv_sec * 1000000000ULL
+						+ t_end.tv_nsec;
+				} else {
+					LOG(WARNING, "no port supports rte_eth_read_clock, "
+					    "raw NIC timestamps unavailable");
+				}
+				LOG(INFO, "NIC clock calibration: %s (%s) nic_hz=%lu "
+				    "nic_ref=%lu wall_ref=%lu ns (100ms sample)",
+				    i ? i->name : "?",
+				    i ? iface_info_port(i)->devargs : "?",
+				    s->ring->nic_hz,
+				    s->ring->nic_ref, s->ring->realtime_ref_ns);
+			} else {
+				LOG(INFO, "capture using NIC hardware timestamps (nanoseconds)");
+			}
+		} else {
+			LOG(NOTICE, "HW timestamps requested but not available, using TSC");
+		}
+	}
+
 	active_capture = s;
 	capture_set_flags(s);
 
-	LOG(INFO, "capture started iface_id=%u snap_len=%u", iface_id, s->snap_len);
+	LOG(INFO, "capture started iface_id=%u snap_len=%u ts_clock=%s",
+	    iface_id, s->snap_len,
+	    s->hw_timestamp ? "adapter" : "host");
 	return s;
 
 err_close:

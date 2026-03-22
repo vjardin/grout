@@ -10,6 +10,7 @@
 #include <rte_bpf.h>
 #include <rte_cycles.h>
 #include <rte_mbuf.h>
+#include <rte_mbuf_dyn.h>
 
 #include <stdatomic.h>
 #include <string.h>
@@ -32,7 +33,8 @@ static inline void capture_enqueue(
 	struct gr_capture_slot *slots = gr_capture_ring_slots(ring);
 	uint32_t mask = ring->slot_count - 1;
 	uint32_t snap = ring->snap_len;
-	uint64_t tsc = rte_rdtsc();
+	bool use_hw_ts = s->hw_timestamp && direction == GR_CAPTURE_DIR_IN;
+	uint64_t batch_tsc = rte_rdtsc();
 
 	// If a BPF filter is installed, run it on each mbuf first.
 	// Only matching packets enter the ring, saving the atomic +
@@ -83,7 +85,10 @@ static inline void capture_enqueue(
 		slot->port_id = port_id;
 		slot->queue_id = queue_id;
 		slot->direction = direction;
-		slot->timestamp_tsc = tsc;
+		if (use_hw_ts && (m->ol_flags & s->ts_dynflag))
+			slot->timestamp_tsc = *RTE_MBUF_DYNFIELD(m, s->ts_dynfield_off, uint64_t *);
+		else
+			slot->timestamp_tsc = batch_tsc;
 
 		if (rte_pktmbuf_is_contiguous(m))
 			memcpy(slot->data, rte_pktmbuf_mtod(m, void *), cap_len);

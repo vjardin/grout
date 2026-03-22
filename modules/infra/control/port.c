@@ -85,7 +85,12 @@ static struct rte_eth_conf default_port_config = {
 		},
 	},
 	.rxmode = {
-		.offloads = RTE_ETH_RX_OFFLOAD_CHECKSUM | RTE_ETH_RX_OFFLOAD_VLAN_STRIP,
+		// RTE_ETH_RX_OFFLOAD_TIMESTAMP: always enabled so HW capture
+		// timestamps are available without port restart. The mlx5 cost
+		// is ~2-3 ns/pkt (CQE read + dynfield write), under 3% of one
+		// core at 10 Mpps.
+		.offloads = RTE_ETH_RX_OFFLOAD_CHECKSUM | RTE_ETH_RX_OFFLOAD_VLAN_STRIP
+			  | RTE_ETH_RX_OFFLOAD_TIMESTAMP,
 	},
 	.txmode = {
 		.offloads = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP,

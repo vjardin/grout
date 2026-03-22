@@ -276,9 +276,16 @@ static int pcap_grout_activate(pcap_t *p) {
 
 	struct gr_capture_start_req creq;
 	int snapshot = pcap_plugin_get_snapshot(p);
+	int ts_type = pcap_plugin_get_tstamp_type(p);
 	memset(&creq, 0, sizeof(creq));
 	creq.iface_id = iface_id;
 	creq.snap_len = (uint32_t)snapshot;
+	if (ts_type == PCAP_TSTAMP_ADAPTER)
+		creq.ts_clock = GR_CAPTURE_TS_NS;
+	else if (ts_type == PCAP_TSTAMP_ADAPTER_UNSYNCED)
+		creq.ts_clock = GR_CAPTURE_TS_RAW_NIC;
+	else
+		creq.ts_clock = GR_CAPTURE_TS_TSC;
 
 	void *resp = NULL;
 	int shm_fd = -1;
@@ -349,6 +356,14 @@ static pcap_t *pcap_grout_create(const char *device, char *ebuf, int *is_ours) {
 		return NULL;
 
 	pcap_plugin_set_activate(p, pcap_grout_activate);
+
+	/* Advertise supported timestamp types for tcpdump -J. */
+	static const int ts_types[] = {
+		PCAP_TSTAMP_HOST,
+		PCAP_TSTAMP_ADAPTER,
+		PCAP_TSTAMP_ADAPTER_UNSYNCED,
+	};
+	pcap_plugin_set_tstamp_type_list(p, ts_types, ARRAY_DIM(ts_types));
 
 	return p;
 }

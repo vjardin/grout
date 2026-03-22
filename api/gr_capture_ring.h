@@ -152,6 +152,11 @@
 #define GR_CAPTURE_DIR_IN  1
 #define GR_CAPTURE_DIR_OUT 2
 
+// Timestamp clock source for capture slots.
+#define GR_CAPTURE_TS_TSC      0 // host TSC ticks (convert via tsc_hz/tsc_ref)
+#define GR_CAPTURE_TS_NS       1 // nanoseconds (NIC HW clock, synced to real-time)
+#define GR_CAPTURE_TS_RAW_NIC  2 // raw NIC clock ticks (convert via nic_hz/nic_ref)
+
 // Per-interface descriptor stored in the ring header.
 // The consumer uses this to generate pcapng Interface Description Blocks.
 struct gr_capture_iface {
@@ -185,11 +190,16 @@ struct gr_capture_ring {
 	uint32_t slot_size;
 	uint32_t snap_len;
 	uint16_t n_ifaces;
-	uint16_t _reserved;
-	// TSC calibration for timestamp conversion.
+	uint8_t ts_clock; // GR_CAPTURE_TS_TSC, _TS_NS, or _TS_RAW_NIC
+	uint8_t _reserved;
+	// TSC calibration for GR_CAPTURE_TS_TSC timestamp conversion.
 	uint64_t tsc_hz;          // TSC ticks per second
 	uint64_t tsc_ref;         // TSC value at capture start
 	uint64_t realtime_ref_ns; // CLOCK_REALTIME at capture start (nanoseconds)
+	// NIC clock calibration for GR_CAPTURE_TS_RAW_NIC conversion.
+	// Consumer converts: ns = realtime_ref_ns + (ts - nic_ref) * 1e9 / nic_hz
+	uint64_t nic_hz;          // NIC clock ticks per second (0 = not available)
+	uint64_t nic_ref;         // NIC clock value at capture start
 	// Producer index (multiple workers, atomic fetch-add).
 	alignas(64) _Atomic uint32_t prod_head;
 	// Consumer index (single reader, not shared with producers).
@@ -276,9 +286,30 @@ gr_capture_ring_dequeue(struct gr_capture_ring *r, struct gr_capture_slot *out) 
 // Split into seconds + remainder to avoid overflow: rem < tsc_hz
 // (at most ~5e9 for a 5 GHz CPU), so rem * 1e9 stays within uint64_t.
 static inline uint64_t
-gr_capture_slot_timestamp_ns(const struct gr_capture_ring *r, const struct gr_capture_slot *s) {
+gr_capture_slot_tsc_to_ns(const struct gr_capture_ring *r, const struct gr_capture_slot *s) {
 	uint64_t delta = s->timestamp_tsc - r->tsc_ref;
 	uint64_t sec = delta / r->tsc_hz;
 	uint64_t rem = delta % r->tsc_hz;
 	return r->realtime_ref_ns + sec * 1000000000ULL + rem * 1000000000ULL / r->tsc_hz;
+}
+
+// Convert a raw NIC clock timestamp to nanoseconds since epoch.
+static inline uint64_t
+gr_capture_slot_nic_to_ns(const struct gr_capture_ring *r, const struct gr_capture_slot *s) {
+	uint64_t delta = s->timestamp_tsc - r->nic_ref;
+	return r->realtime_ref_ns + delta * 1000000000ULL / r->nic_hz;
+}
+
+// Convert a slot timestamp to nanoseconds, dispatching on ts_clock.
+static inline uint64_t
+gr_capture_slot_timestamp_ns(const struct gr_capture_ring *r, const struct gr_capture_slot *s) {
+	switch (r->ts_clock) {
+	case GR_CAPTURE_TS_NS:
+		return s->timestamp_tsc; // already nanoseconds
+	case GR_CAPTURE_TS_RAW_NIC:
+		return gr_capture_slot_nic_to_ns(r, s);
+	case GR_CAPTURE_TS_TSC:
+	default:
+		return gr_capture_slot_tsc_to_ns(r, s);
+	}
 }
