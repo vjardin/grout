@@ -88,7 +88,7 @@ static struct rte_eth_conf default_port_config = {
 		.offloads = RTE_ETH_RX_OFFLOAD_CHECKSUM | RTE_ETH_RX_OFFLOAD_VLAN_STRIP,
 	},
 	.txmode = {
-		.offloads = 0,
+		.offloads = RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP,
 	},
 };
 

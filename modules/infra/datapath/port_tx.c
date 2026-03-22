@@ -11,8 +11,10 @@
 #include <gr_worker.h>
 
 #include <rte_build_config.h>
+#include <rte_cycles.h>
 #include <rte_ethdev.h>
 #include <rte_malloc.h>
+#include <rte_mbuf_dyn.h>
 #include <rte_spinlock.h>
 
 #include <stdint.h>
@@ -120,6 +122,23 @@ static inline uint16_t tx_add_vlan(
 	return ok;
 }
 
+static inline void
+tx_pace_stamp(struct tx_ext *ext, struct rte_mbuf **mbufs, uint16_t nb_objs) {
+	uint64_t now;
+
+	if (likely(ext == NULL || ext->pace_tsc_per_byte == 0))
+		return;
+
+	now = rte_rdtsc();
+	for (uint16_t i = 0; i < nb_objs; i++) {
+		if (ext->pace_next_tsc < now)
+			ext->pace_next_tsc = now;
+		*RTE_MBUF_DYNFIELD(mbufs[i], ext->ts_offset, uint64_t *) = ext->pace_next_tsc;
+		mbufs[i]->ol_flags |= ext->ts_dynflag;
+		ext->pace_next_tsc += rte_pktmbuf_pkt_len(mbufs[i]) * ext->pace_tsc_per_byte;
+	}
+}
+
 uint16_t tx_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
 	const struct tx_node_ctx *ctx = tx_node_ctx(node);
 	struct rte_mbuf *mbufs[RTE_GRAPH_BURST_SIZE];
@@ -132,9 +151,11 @@ uint16_t tx_process(struct rte_graph *graph, struct rte_node *node, void **objs,
 	if (unlikely(nb_objs == 0))
 		return 0;
 
+	tx_pace_stamp(ctx->ext, mbufs, nb_objs);
+
 	tx_ok = rte_eth_tx_burst(ctx->txq.port_id, ctx->txq.queue_id, mbufs, nb_objs);
 
-	tx_finish(graph, node, (void *)mbufs, nb_objs, tx_ok, 0);
+	tx_finish(graph, node, (void *)mbufs, nb_objs, tx_ok, ctx->flags);
 
 	return nb_objs;
 }
@@ -152,11 +173,12 @@ tx_shared_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	if (unlikely(nb_objs == 0))
 		return 0;
 
-	rte_spinlock_lock(ctx->lock);
+	rte_spinlock_lock(ctx->ext->lock);
+	tx_pace_stamp(ctx->ext, mbufs, nb_objs);
 	tx_ok = rte_eth_tx_burst(ctx->txq.port_id, ctx->txq.queue_id, mbufs, nb_objs);
-	rte_spinlock_unlock(ctx->lock);
+	rte_spinlock_unlock(ctx->ext->lock);
 
-	tx_finish(graph, node, (void *)mbufs, nb_objs, tx_ok, RXTX_F_TXQ_SHARED);
+	tx_finish(graph, node, (void *)mbufs, nb_objs, tx_ok, ctx->flags);
 
 	return nb_objs;
 }

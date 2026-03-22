@@ -32,10 +32,23 @@ GR_NODE_CTX_TYPE(rx_node_ctx, {
 	uint16_t burst_size;
 });
 
+// Extended TX state (heap-allocated, pointed to from tx_node_ctx).
+// Holds lock, pacing state, and anything else that doesn't fit in 16 bytes.
+struct tx_ext {
+	rte_spinlock_t *lock;        // non-NULL when TXQ shared across workers
+	// TX pacing (active when pace_tsc_per_byte != 0)
+	uint64_t pace_next_tsc;      // TSC of next allowed send time
+	uint64_t pace_tsc_per_byte;  // TSC ticks per byte (0 = disabled)
+	int ts_offset;               // mbuf dynfield offset for timestamp
+	uint64_t ts_dynflag;         // mbuf ol_flags bit for TX timestamp
+};
+
 GR_NODE_CTX_TYPE(tx_node_ctx, {
-	struct port_queue txq;
-	rte_spinlock_t *lock;
-});
+	struct port_queue txq;       // 4 bytes
+	uint16_t _pad;
+	uint16_t flags;              // rxtx_flags_t
+	struct tx_ext *ext;          // 8 bytes — heap-allocated extended state
+}); // total: 16 bytes
 
 struct port_output_edges {
 	struct {

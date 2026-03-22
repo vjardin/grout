@@ -17,9 +17,11 @@
 
 #include <event2/event.h>
 #include <rte_build_config.h>
+#include <rte_cycles.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_malloc.h>
+#include <rte_mbuf_dyn.h>
 
 #include <stdatomic.h>
 #include <sys/queue.h>
@@ -68,6 +70,14 @@ void worker_graph_free(struct worker *worker) {
 	int ret;
 	for (int i = 0; i < 2; i++) {
 		if (worker->graph[i] != NULL) {
+			const char *gname = rte_graph_id_to_name(worker->graph[i]->id);
+			gr_vec_foreach (const char *name, tx_node_names) {
+				struct rte_node *n = rte_graph_node_get_by_name(gname, name);
+				if (n != NULL) {
+					struct tx_node_ctx *c = tx_node_ctx(n);
+					rte_free(c->ext);
+				}
+			}
 			if ((ret = rte_graph_destroy(worker->graph[i]->id)) < 0)
 				LOG(ERR, "rte_graph_destroy: %s", rte_strerror(-ret));
 			worker->graph[i] = NULL;
@@ -184,7 +194,8 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 		struct tx_node_ctx *ctx = tx_node_ctx(node);
 		ctx->txq.port_id = UINT16_MAX;
 		ctx->txq.queue_id = UINT16_MAX;
-		ctx->lock = NULL;
+		ctx->flags = 0;
+		ctx->ext = NULL;
 	}
 
 	// initialize the port_output node context
@@ -217,6 +228,15 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 		ctx->txq.queue_id = qmap->queue_id;
 		port = find_port(ports, qmap->port_id);
 
+		// allocate extended state (lock + pacing)
+		struct tx_ext *ext = rte_malloc(__func__, sizeof(*ext), RTE_CACHE_LINE_SIZE);
+		if (ext == NULL) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		memset(ext, 0, sizeof(*ext));
+		ctx->ext = ext;
+
 		// set spinlock only if multiple workers share this TX queue
 		unsigned txq_users = 0;
 		struct worker *w = NULL;
@@ -227,7 +247,8 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 			}
 		}
 		if (txq_users > 1) {
-			ctx->lock = &port->txq_locks[qmap->queue_id];
+			ext->lock = &port->txq_locks[qmap->queue_id];
+			ctx->flags = RXTX_F_TXQ_SHARED;
 			node->process = tx_shared_process;
 			LOG(WARNING,
 			    "[CPU %d] port %s txq %u shared by %u workers",
@@ -237,6 +258,23 @@ worker_graph_new(struct worker *worker, uint8_t index, gr_vec struct iface_info_
 			    txq_users);
 		} else {
 			node->process = tx_process;
+		}
+
+		// configure TX pacing if a rate limit is set and the
+		// timestamp dynfield is registered (tx_pp or wait_on_time)
+		uint32_t rate_mbps = 0;
+		rte_eth_get_queue_rate_limit(qmap->port_id, qmap->queue_id, &rate_mbps);
+		int ts_off = rte_mbuf_dynfield_lookup(
+			RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL
+		);
+		int ts_bit = rte_mbuf_dynflag_lookup(
+			RTE_MBUF_DYNFLAG_TX_TIMESTAMP_NAME, NULL
+		);
+		if (rate_mbps > 0 && ts_off >= 0 && ts_bit >= 0) {
+			ext->pace_tsc_per_byte =
+				(rte_get_tsc_hz() * 8) / ((uint64_t)rate_mbps * 1000000ULL);
+			ext->ts_offset = ts_off;
+			ext->ts_dynflag = 1ULL << ts_bit;
 		}
 
 		for (rte_edge_t edge = 0; edge < gr_vec_len(tx_node_names); edge++) {
@@ -291,6 +329,15 @@ int worker_graph_reload(struct worker *worker, gr_vec struct iface_info_port **p
 	next = !next;
 
 	if (worker->graph[next] != NULL) {
+		// free pacing state from old TX nodes before destroying the graph
+		const char *gname = rte_graph_id_to_name(worker->graph[next]->id);
+		gr_vec_foreach (const char *name, tx_node_names) {
+			struct rte_node *n = rte_graph_node_get_by_name(gname, name);
+			if (n != NULL) {
+				struct tx_node_ctx *c = tx_node_ctx(n);
+				rte_free(c->ext);
+			}
+		}
 		if ((ret = rte_graph_destroy(worker->graph[next]->id)) < 0)
 			errno_log(-ret, "rte_graph_destroy");
 		worker->graph[next] = NULL;

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024 Robin Jarry
 
+#include "graph_priv.h"
+
 #include <gr_api.h>
 #include <gr_config.h>
 #include <gr_control_queue.h>
@@ -132,6 +134,16 @@ static struct api_out txq_rate_set(const void *request, struct api_ctx *) {
 			return api_out(-ret, 0, NULL);
 	}
 
+	// Reload graphs so TX node contexts pick up new pacing parameters.
+	gr_vec struct iface_info_port **ports = NULL;
+	struct iface *i = NULL;
+	while ((i = iface_next(GR_IFACE_TYPE_PORT, i)) != NULL)
+		gr_vec_add(ports, iface_info_port(i));
+	ret = worker_graph_reload_all(ports);
+	gr_vec_free(ports);
+	if (ret < 0)
+		return api_out(-ret, 0, NULL);
+
 	return api_out(0, 0, NULL);
 }
 
@@ -225,7 +237,7 @@ static struct api_out pp_rate_table_get(const void *request, struct api_ctx *) {
 		return api_out(ENOMEM, 0, NULL);
 
 	resp->total = pmd_info.total;
-	resp->used = pmd_info.used;
+	resp->used = pmd_info.port_used;
 	return api_out(0, sizeof(*resp), resp);
 #else
 	(void)request;
