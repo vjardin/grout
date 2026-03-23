@@ -21,6 +21,8 @@ struct gr_api_response {
 	uint32_t for_id; // matches gr_api_request.id (for out-of-order handling)
 	uint32_t status; // errno values, 0 for success
 	uint32_t payload_len; // max GR_API_MAX_MSG_LEN
+	uint8_t fd_count; // number of fds passed via SCM_RIGHTS (0 or 1)
+	uint8_t _reserved[3];
 };
 
 #define GR_API_MAX_MSG_LEN (128 * 1024)
@@ -53,10 +55,13 @@ int gr_api_client_disconnect(struct gr_api_client *);
 long int
 gr_api_client_send(struct gr_api_client *, uint32_t req_type, size_t tx_len, const void *tx_data);
 
-// Receive an API response.
+// Receive an API response, optionally receiving a file descriptor.
+// If fd is non-NULL, any SCM_RIGHTS fd from the response is stored in *fd.
+// If fd is NULL, any received fd is closed automatically.
 // Caller must free(*rx_data) after use.
 // Returns 0 on success, negative errno on failure.
 int gr_api_client_recv(struct gr_api_client *, uint32_t for_id, void **rx_data);
+int gr_api_client_recv_fd(struct gr_api_client *, uint32_t for_id, void **rx_data, int *fd);
 
 // Send a request and receive the response.
 // Convenience function for simple request-response patterns.
@@ -73,6 +78,22 @@ static inline int gr_api_client_send_recv(
 	if (ret < 0)
 		return ret;
 	return gr_api_client_recv(client, ret, rx_data);
+}
+
+// Send a request and receive the response with an optional file descriptor.
+// If fd is non-NULL and the server sends an fd via SCM_RIGHTS, it is stored in *fd.
+static inline int gr_api_client_send_recv_fd(
+	struct gr_api_client *client,
+	uint32_t req_type,
+	size_t tx_len,
+	const void *tx_data,
+	void **rx_data,
+	int *fd
+) {
+	long int ret = gr_api_client_send(client, req_type, tx_len, tx_data);
+	if (ret < 0)
+		return ret;
+	return gr_api_client_recv_fd(client, ret, rx_data, fd);
 }
 
 // Send a request and iterate over the received stream of responses.
