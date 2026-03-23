@@ -26,6 +26,7 @@
 struct response {
 	struct gr_api_response header;
 	void *payload;
+	int fd; // received via SCM_RIGHTS, -1 if none
 	STAILQ_ENTRY(response) next;
 };
 
@@ -76,6 +77,8 @@ int gr_api_client_disconnect(struct gr_api_client *client) {
 	while (!STAILQ_EMPTY(&client->responses)) {
 		struct response *resp = STAILQ_FIRST(&client->responses);
 		STAILQ_REMOVE_HEAD(&client->responses, next);
+		if (resp->fd >= 0)
+			close(resp->fd);
 		free(resp->payload);
 		free(resp);
 	}
@@ -152,10 +155,61 @@ long int gr_api_client_send(
 	return req.id;
 }
 
-int gr_api_client_recv(struct gr_api_client *client, uint32_t for_id, void **rx_data) {
+// Receive a response header, potentially with an SCM_RIGHTS fd.
+// Uses recvmsg() so ancillary data is captured.
+static int recv_response_header(
+	const struct gr_api_client *c,
+	struct gr_api_response *resp,
+	int *recv_fd
+) {
+	*recv_fd = -1;
+
+	union {
+		char buf[CMSG_SPACE(sizeof(int))];
+		struct cmsghdr align;
+	} cmsg_buf;
+	memset(&cmsg_buf, 0, sizeof(cmsg_buf));
+
+	struct iovec iov = {.iov_base = resp, .iov_len = sizeof(*resp)};
+	struct msghdr msg = {
+		.msg_iov = &iov,
+		.msg_iovlen = 1,
+		.msg_control = cmsg_buf.buf,
+		.msg_controllen = sizeof(cmsg_buf.buf),
+	};
+
+	ssize_t n;
+	do {
+		n = recvmsg(c->sock_fd, &msg, MSG_WAITALL | MSG_CMSG_CLOEXEC);
+	} while (n < 0 && (errno == EINTR || errno == EAGAIN));
+
+	if (n == 0) {
+		errno = ECONNRESET;
+		return -1;
+	}
+	if (n < 0 || (size_t)n < sizeof(*resp))
+		return -1;
+
+	struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+	if (cmsg != NULL && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
+		memcpy(recv_fd, CMSG_DATA(cmsg), sizeof(int));
+
+	return 0;
+}
+
+int gr_api_client_recv_fd(
+	struct gr_api_client *client,
+	uint32_t for_id,
+	void **rx_data,
+	int *fd
+) {
 	struct response *cached = NULL;
 	struct gr_api_response resp;
 	void *payload = NULL;
+	int recv_fd = -1;
+
+	if (fd != NULL)
+		*fd = -1;
 
 	if (client == NULL)
 		return errno_set(EINVAL);
@@ -171,12 +225,13 @@ int gr_api_client_recv(struct gr_api_client *client, uint32_t for_id, void **rx_
 		STAILQ_REMOVE(&client->responses, cached, response, next);
 		resp = cached->header;
 		payload = cached->payload;
+		recv_fd = cached->fd;
 		free(cached);
 		goto out;
 	}
 recv:
 	// No matching cached message, try to receive one from the socket.
-	if (recv_all(client, &resp, sizeof(resp)) != sizeof(resp))
+	if (recv_response_header(client, &resp, &recv_fd) < 0)
 		goto err;
 
 	if (resp.payload_len > GR_API_MAX_MSG_LEN) {
@@ -197,8 +252,10 @@ recv:
 			goto err;
 		cached->header = resp;
 		cached->payload = payload;
+		cached->fd = recv_fd;
 		STAILQ_INSERT_TAIL(&client->responses, cached, next);
 		payload = NULL;
+		recv_fd = -1;
 		// And try to receive the next message until we get the correct ID.
 		goto recv;
 	}
@@ -211,11 +268,21 @@ out:
 		assert(rx_data != NULL);
 		*rx_data = payload;
 	}
+	if (fd != NULL)
+		*fd = recv_fd;
+	else if (recv_fd >= 0)
+		close(recv_fd);
 
 	return 0;
 err:
+	if (recv_fd >= 0)
+		close(recv_fd);
 	free(payload);
 	return -errno;
+}
+
+int gr_api_client_recv(struct gr_api_client *client, uint32_t for_id, void **rx_data) {
+	return gr_api_client_recv_fd(client, for_id, rx_data, NULL);
 }
 
 int gr_api_client_event_recv(const struct gr_api_client *c, struct gr_api_event **event) {

@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -315,17 +316,59 @@ send:
 		.for_id = ctx->header.id,
 		.status = out.status,
 		.payload_len = out.len,
+		.fd_count = (out.fd >= 0) ? 1 : 0,
 	};
 
-	if (bufferevent_write(bev, &resp, sizeof(resp)) < 0)
-		LOG(ERR, "failed to write header");
-	if (out.len > 0) {
-		assert(out.payload != NULL);
-		if (bufferevent_write(bev, out.payload, out.len) < 0)
-			LOG(ERR, "failed to write payload");
-	}
+	if (out.fd >= 0) {
+		// Send response with fd via sendmsg(SCM_RIGHTS).
+		// Flush bufferevent first to avoid interleaving.
+		bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
 
-	bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
+		struct iovec iov[2];
+		int iovlen = 1;
+		iov[0].iov_base = &resp;
+		iov[0].iov_len = sizeof(resp);
+		if (out.len > 0 && out.payload != NULL) {
+			iov[1].iov_base = out.payload;
+			iov[1].iov_len = out.len;
+			iovlen = 2;
+		}
+		union {
+			char buf[CMSG_SPACE(sizeof(int))];
+			struct cmsghdr align;
+		} cmsg_buf;
+		memset(&cmsg_buf, 0, sizeof(cmsg_buf));
+
+		struct msghdr msg = {
+			.msg_iov = iov,
+			.msg_iovlen = iovlen,
+			.msg_control = cmsg_buf.buf,
+			.msg_controllen = sizeof(cmsg_buf.buf),
+		};
+		struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_level = SOL_SOCKET;
+		cmsg->cmsg_type = SCM_RIGHTS;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+		memcpy(CMSG_DATA(cmsg), &out.fd, sizeof(int));
+
+		ssize_t ret;
+		do {
+			ret = sendmsg(bufferevent_getfd(bev), &msg, MSG_NOSIGNAL);
+		} while (ret < 0 && errno == EINTR);
+		if (ret < 0)
+			LOG(ERR, "sendmsg with fd: %s", strerror(errno));
+		close(out.fd);
+		out.fd = -1;
+	} else {
+		if (bufferevent_write(bev, &resp, sizeof(resp)) < 0)
+			LOG(ERR, "failed to write header");
+		if (out.len > 0) {
+			assert(out.payload != NULL);
+			if (bufferevent_write(bev, out.payload, out.len) < 0)
+				LOG(ERR, "failed to write payload");
+		}
+		bufferevent_flush(bev, EV_WRITE, BEV_FLUSH);
+	}
 
 	free(req_payload);
 	free(out.payload);
