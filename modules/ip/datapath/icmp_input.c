@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright (c) 2024 Robin Jarry
 
+#include "datapath.h"
 #include "graph.h"
 #include "ip4_datapath.h"
 #include "mbuf.h"
@@ -8,11 +9,14 @@
 
 #include <rte_icmp.h>
 
+GR_NODE_CTX_TYPE(icmp_input_ctx, { struct rate_limit_ctx limit; });
+
 enum {
 	OUTPUT = 0,
 	DELIVER,
 	INVALID,
 	UNSUPPORTED,
+	RATE_LIMITED,
 	EDGE_COUNT,
 };
 
@@ -50,12 +54,18 @@ static inline bool icmp_quoted_datagram_valid(const struct rte_icmp_hdr *icmp, u
 
 static uint16_t
 icmp_input_process(struct rte_graph *graph, struct rte_node *node, void **objs, uint16_t nb_objs) {
+	struct icmp_input_ctx *ctx = icmp_input_ctx(node);
 	struct ip_local_mbuf_data *ip_data;
 	struct rte_icmp_hdr *icmp;
 	struct rte_mbuf *mbuf;
 	rte_edge_t edge;
 	uint16_t cksum;
 	ip4_addr_t ip;
+
+	if (rate_limited(&ctx->limit, graph_conf.icmp_rate, nb_objs)) {
+		rte_node_next_stream_move(graph, node, RATE_LIMITED);
+		return nb_objs;
+	}
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -105,6 +115,13 @@ next:
 	return nb_objs;
 }
 
+static int icmp_input_init(const struct rte_graph *, struct rte_node *node) {
+	struct icmp_input_ctx *ctx = icmp_input_ctx(node);
+	ctx->limit.tokens = graph_conf.icmp_rate;
+	ctx->limit.last_refill = rte_rdtsc();
+	return 0;
+}
+
 static void icmp_input_register(void) {
 	ip_input_local_add_proto(IPPROTO_ICMP, "icmp_input");
 }
@@ -113,6 +130,7 @@ static struct rte_node_register icmp_input_node = {
 	.name = "icmp_input",
 
 	.process = icmp_input_process,
+	.init = icmp_input_init,
 
 	.nb_edges = EDGE_COUNT,
 	.next_nodes = {
@@ -120,6 +138,7 @@ static struct rte_node_register icmp_input_node = {
 		[DELIVER] = "icmp_input_deliver",
 		[INVALID] = "icmp_input_invalid",
 		[UNSUPPORTED] = "icmp_input_unsupported",
+		[RATE_LIMITED] = "error_rate_limited",
 	},
 };
 
@@ -142,6 +161,7 @@ GR_DROP_REGISTER(icmp_input_unsupported);
 #include <stddef.h>
 
 int gr_rte_log_type;
+struct gr_graph_conf graph_conf;
 struct log_types log_types = STAILQ_HEAD_INITIALIZER(log_types);
 struct node_infos node_infos = STAILQ_HEAD_INITIALIZER(node_infos);
 mock_func(rte_edge_t, gr_node_attach_parent(const char *, const char *));
