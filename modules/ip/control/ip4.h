@@ -45,6 +45,7 @@ void rib4_cleanup(struct nexthop *, bool notify);
 void rib4_cleanup_learned(struct nexthop *);
 // delete the routes of an interface, except those owned by a routing daemon
 void rib4_cleanup_iface(uint16_t iface_id, bool notify);
+void rib4_cleanup_iface_nexthops(uint16_t iface_id, bool notify);
 
 typedef int (*rib4_iter_cb_t)(
 	uint16_t vrf_id,

@@ -169,6 +169,15 @@ void nexthop_routes_cleanup(struct nexthop *nh, bool notify) {
 	}
 }
 
+void nexthop_routes_cleanup_iface(uint16_t iface_id, bool notify) {
+	const struct nexthop_af_ops *ops;
+	for (unsigned i = 0; i < ARRAY_DIM(af_ops); i++) {
+		ops = af_ops[i];
+		if (ops != NULL && ops->cleanup_routes_iface != NULL)
+			ops->cleanup_routes_iface(iface_id, notify);
+	}
+}
+
 static void l3_remove_references(struct nexthop *nh) {
 	if (nh->type == GR_NH_T_L3) {
 		struct nexthop_info_l3 *l3 = nexthop_info_l3(nh);

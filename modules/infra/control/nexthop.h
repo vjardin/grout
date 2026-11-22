@@ -154,6 +154,9 @@ int nexthop_serialize(const void *obj, void **buf);
 // Clean all routes that reference a given nexthop.
 void nexthop_routes_cleanup(struct nexthop *, bool notify);
 
+// Clean all routes that reference the nexthops of an interface.
+void nexthop_routes_cleanup_iface(uint16_t iface_id, bool notify);
+
 // Increment the reference counter of a nexthop.
 void nexthop_incref(struct nexthop *);
 
@@ -194,6 +197,8 @@ struct nexthop_af_ops {
 	int (*solicit)(struct nexthop *);
 	// Callback that will be invoked to delete all routes which reference a given nexthop.
 	void (*cleanup_routes)(struct nexthop *, bool notify);
+	// Same for all the nexthops of an interface, except those of its addresses.
+	void (*cleanup_routes_iface)(uint16_t iface_id, bool notify);
 	// Delete only automatically learned host routes for this nexthop.
 	void (*cleanup_learned)(struct nexthop *);
 	// Callback invoked by resolve() to flush held packets when the nexthop becomes

@@ -634,6 +634,7 @@ struct rib6_cleanup_entry {
 struct rib6_cleanup_ctx {
 	const struct nexthop *nh;
 	uint16_t iface_id;
+	bool iface_removed;
 	bool internal_only;
 	vec struct rib6_cleanup_entry *entries;
 };
@@ -649,7 +650,12 @@ static int rib6_cleanup_cb(
 	struct rib6_cleanup_ctx *ctx = priv;
 	bool match;
 
-	if (ctx->iface_id != GR_IFACE_ID_UNDEF) {
+	if (ctx->iface_removed) {
+		match = nh->iface_id == ctx->iface_id
+			&& !(nh->type == GR_NH_T_L3
+			     && (nexthop_info_l3(nh)->flags & NH_LOCAL_ADDR_FLAGS)
+				     == NH_LOCAL_ADDR_FLAGS);
+	} else if (ctx->iface_id != GR_IFACE_ID_UNDEF) {
 		// Routes installed by a routing daemon are left to their owner.
 		match = nh->iface_id == ctx->iface_id && origin <= GR_NH_ORIGIN_STATIC;
 	} else {
@@ -707,6 +713,14 @@ void rib6_cleanup_iface(uint16_t iface_id, bool notify) {
 		.nh = NULL,
 		.iface_id = iface_id,
 		.entries = NULL,
+	};
+	rib6_cleanup_run(&ctx, notify);
+}
+
+void rib6_cleanup_iface_nexthops(uint16_t iface_id, bool notify) {
+	struct rib6_cleanup_ctx ctx = {
+		.iface_id = iface_id,
+		.iface_removed = true,
 	};
 	rib6_cleanup_run(&ctx, notify);
 }
