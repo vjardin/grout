@@ -8,6 +8,7 @@
 
 #include <rte_ip6.h>
 #include <rte_mbuf.h>
+#include <rte_udp.h>
 
 LOG_TYPE("graph");
 
@@ -25,6 +26,27 @@ void ip6_input_local_add_proto(uint8_t proto, const char *next_node) {
 	if (edges[proto] != UNKNOWN_PROTO)
 		ABORT("next node already registered for proto=%hhu", proto);
 	edges[proto] = gr_node_attach_parent("ip6_input_local", next_node);
+}
+
+static uint64_t udp_zero_cksum_ports[UINT_NUM_VALUES(rte_be16_t) / 64];
+
+void ip6_input_local_udp_zero_cksum_allow(rte_be16_t port) {
+	LOG(DEBUG, "ip6_input_local: udp port=%hu accepts zero checksums", rte_be_to_cpu_16(port));
+	udp_zero_cksum_ports[port / 64] |= UINT64_C(1) << (port % 64);
+}
+
+static inline bool
+udp_zero_cksum_allowed(const struct rte_mbuf *m, const struct ip6_local_mbuf_data *d) {
+	const struct rte_udp_hdr *udp;
+
+	if (d->len < sizeof(*udp))
+		return false;
+
+	udp = rte_pktmbuf_mtod_offset(m, const struct rte_udp_hdr *, d->ext_offset);
+	if (udp->dgram_cksum != 0)
+		return false;
+
+	return udp_zero_cksum_ports[udp->dst_port / 64] & (UINT64_C(1) << (udp->dst_port % 64));
 }
 
 static uint16_t ip6_input_local_process(
@@ -104,6 +126,9 @@ static uint16_t ip6_input_local_process(
 			// IPv6 extensions are L3 and need the IPv6 header.
 			goto next;
 		case IPPROTO_UDP:
+			if (udp_zero_cksum_allowed(m, d))
+				goto adj_next;
+			break;
 		case IPPROTO_TCP:
 		case IPPROTO_SCTP:
 		case IPPROTO_DCCP:
@@ -181,6 +206,8 @@ mock_func(int, drop_format(char *, size_t, const void *, size_t));
 #define TEST_EDGE 42
 #define TEST_PROTO IPPROTO_ICMPV6
 #define TEST_PAYLOAD_LEN 8
+#define TEST_UDP_PORT RTE_BE16(1000)
+#define TEST_UDP_OTHER_PORT RTE_BE16(1001)
 
 struct fake_mbuf {
 	struct rte_ipv6_hdr ipv6_hdr;
@@ -211,6 +238,7 @@ static void fake_mbuf_init(struct fake_mbuf *fm) {
 
 static int setup(void **) {
 	edges[TEST_PROTO] = TEST_EDGE;
+	ip6_input_local_udp_zero_cksum_allow(TEST_UDP_PORT);
 	return 0;
 }
 
@@ -301,6 +329,84 @@ static void ip6_local_sets_packet_type(void **) {
 	assert_int_equal(fm.mbuf.packet_type, RTE_PTYPE_L3_IPV6);
 }
 
+static struct rte_udp_hdr *fake_mbuf_udp(struct fake_mbuf *fm, rte_be16_t dst_port) {
+	struct rte_udp_hdr *udp = (struct rte_udp_hdr *)fm->payload;
+	uint16_t len = sizeof(*udp) + 8;
+
+	fm->ipv6_hdr.proto = IPPROTO_UDP;
+	fm->ipv6_hdr.payload_len = rte_cpu_to_be_16(len);
+	fm->mbuf.data_len = fm->mbuf.pkt_len = sizeof(fm->ipv6_hdr) + len;
+	udp->src_port = RTE_BE16(1234);
+	udp->dst_port = dst_port;
+	udp->dgram_len = rte_cpu_to_be_16(len);
+	udp->dgram_cksum = 0;
+	memset(udp + 1, 0x5a, 8);
+
+	edges[IPPROTO_UDP] = TEST_EDGE;
+
+	return udp;
+}
+
+static void ip6_local_udp_zero_cksum_refused(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fake_mbuf_udp(&fm, TEST_UDP_OTHER_PORT);
+
+	expect_uint_value(rte_node_enqueue_x1, next, BAD_CHECKSUM);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+}
+
+static void ip6_local_udp_zero_cksum_allowed(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fake_mbuf_udp(&fm, TEST_UDP_PORT);
+
+	expect_uint_value(rte_node_enqueue_x1, next, TEST_EDGE);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+
+	assert_int_equal(fm.mbuf.data_off, sizeof(fm.ipv6_hdr));
+}
+
+static void ip6_local_udp_zero_cksum_allowed_hw_bad(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fake_mbuf_udp(&fm, TEST_UDP_PORT);
+	fm.mbuf.ol_flags |= RTE_MBUF_F_RX_L4_CKSUM_BAD;
+
+	expect_uint_value(rte_node_enqueue_x1, next, TEST_EDGE);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+}
+
+static void ip6_local_udp_bad_cksum_refused(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fake_mbuf_udp(&fm, TEST_UDP_PORT)->dgram_cksum = RTE_BE16(0x1234);
+
+	expect_uint_value(rte_node_enqueue_x1, next, BAD_CHECKSUM);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+}
+
+static void ip6_local_udp_valid_cksum(void **) {
+	struct rte_udp_hdr *udp;
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	udp = fake_mbuf_udp(&fm, TEST_UDP_OTHER_PORT);
+	udp->dgram_cksum = rte_ipv6_udptcp_cksum(&fm.ipv6_hdr, udp);
+
+	expect_uint_value(rte_node_enqueue_x1, next, TEST_EDGE);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+}
+
 static void ip6_local_saves_traffic_class(void **) {
 	struct fake_mbuf fm;
 	void *obj = &fm.mbuf;
@@ -325,6 +431,11 @@ int main(void) {
 		cmocka_unit_test_setup(ip6_local_valid_length, setup),
 		cmocka_unit_test_setup(ip6_local_sets_packet_type, setup),
 		cmocka_unit_test_setup(ip6_local_saves_traffic_class, setup),
+		cmocka_unit_test_setup(ip6_local_udp_zero_cksum_refused, setup),
+		cmocka_unit_test_setup(ip6_local_udp_zero_cksum_allowed, setup),
+		cmocka_unit_test_setup(ip6_local_udp_zero_cksum_allowed_hw_bad, setup),
+		cmocka_unit_test_setup(ip6_local_udp_bad_cksum_refused, setup),
+		cmocka_unit_test_setup(ip6_local_udp_valid_cksum, setup),
 	};
 
 	return cmocka_run_group_tests(tests, NULL, NULL);

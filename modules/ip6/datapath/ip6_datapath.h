@@ -26,6 +26,7 @@ GR_MBUF_PRIV_DATA_TYPE(ip6_local_mbuf_data, {
 });
 
 void ip6_input_local_add_proto(uint8_t proto, const char *next_node);
+void ip6_input_local_udp_zero_cksum_allow(rte_be16_t port);
 void ip6_input_register_nexthop_type(gr_nh_type_t type, const char *next_node);
 void ip6_output_register_interface_type(gr_iface_type_t type, const char *next_node);
 void ip6_output_register_nexthop_type(gr_nh_type_t type, const char *next_node);
