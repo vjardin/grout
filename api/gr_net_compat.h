@@ -8,6 +8,10 @@
 
 typedef uint16_t rte_be16_t;
 
+#define RTE_IPV4(a, b, c, d)                                                                       \
+	(((uint32_t)((a) & 0xff) << 24) | ((uint32_t)((b) & 0xff) << 16)                           \
+	 | ((uint32_t)((c) & 0xff) << 8) | ((uint32_t)((d) & 0xff)))
+
 #define RTE_IPV6_ADDR_SIZE 16
 #define RTE_IPV6_MAX_DEPTH (RTE_IPV6_ADDR_SIZE * CHAR_BIT)
 
