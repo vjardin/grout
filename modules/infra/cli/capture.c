@@ -72,6 +72,7 @@ static cmd_status_t capture_dump(struct gr_api_client *c, const struct ec_pnode 
 		switch (iface->type) {
 		case GR_IFACE_TYPE_VRF:
 		case GR_IFACE_TYPE_IPIP:
+		case GR_IFACE_TYPE_LISP:
 			link_type = DLT_RAW;
 			break;
 		default:

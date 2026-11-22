@@ -39,6 +39,7 @@ class Iface:
         "GR_IFACE_TYPE_PORT": "struct __gr_iface_info_port_base",
         "GR_IFACE_TYPE_VLAN": "struct gr_iface_info_vlan",
         "GR_IFACE_TYPE_IPIP": "struct gr_iface_info_ipip",
+        "GR_IFACE_TYPE_LISP": "struct gr_iface_info_lisp",
     }
 
     def __init__(self, val):

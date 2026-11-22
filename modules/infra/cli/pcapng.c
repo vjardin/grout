@@ -29,6 +29,7 @@ static uint16_t iface_type_to_linktype(gr_iface_type_t type) {
 	switch (type) {
 	case GR_IFACE_TYPE_VRF:
 	case GR_IFACE_TYPE_IPIP:
+	case GR_IFACE_TYPE_LISP:
 		return PCAPNG_LINKTYPE_RAW;
 	default:
 		return PCAPNG_LINKTYPE_EN10MB;
