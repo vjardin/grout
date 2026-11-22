@@ -171,7 +171,7 @@ cleanup() {
 
 	if socat FILE:/dev/null UNIX-CONNECT:$GROUT_SOCK_PATH 2>/dev/null; then
 		# delete interfaces in reverse dependency order
-		for type in vlan port bond vxlan ipip bridge vrf; do
+		for type in vlan port bond vxlan ipip lisp bridge vrf; do
 			echo interface show type $type
 		done | grcli -j | jq '.[].name' | sed 's/^/interface del /' |
 		grcli -x

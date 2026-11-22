@@ -2,5 +2,6 @@
 # Copyright (c) 2026 Vincent Jardin <vjardin@free.fr>, Free Mobile
 
 subdir('api')
+subdir('cli')
 subdir('control')
 subdir('datapath')
