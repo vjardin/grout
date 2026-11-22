@@ -199,6 +199,8 @@ void nexthop_destroy(struct nexthop *);
 struct nexthop_stats {
 	uint64_t tx_packets;
 	uint64_t tx_bytes;
+	uint64_t rx_packets;
+	uint64_t rx_bytes;
 };
 
 // One table per lcore, indexed by nexthop->stats_id.
@@ -212,6 +214,17 @@ static inline void nexthop_stats_tx(const struct nexthop *nh, const struct rte_m
 		stats = &nexthop_stats[rte_lcore_id()][nh->stats_id];
 		stats->tx_packets++;
 		stats->tx_bytes += rte_pktmbuf_pkt_len(m);
+	}
+}
+
+// Count a packet received from a nexthop.
+static inline void nexthop_stats_rx(const struct nexthop *nh, const struct rte_mbuf *m) {
+	struct nexthop_stats *stats;
+
+	if (nh->stats_id != 0) {
+		stats = &nexthop_stats[rte_lcore_id()][nh->stats_id];
+		stats->rx_packets++;
+		stats->rx_bytes += rte_pktmbuf_pkt_len(m);
 	}
 }
 

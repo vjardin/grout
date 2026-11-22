@@ -244,6 +244,8 @@ static void stats_sum(uint32_t stats_id, struct nexthop_stats *sum) {
 		s = &nexthop_stats[lcore_id][stats_id];
 		sum->tx_packets += s->tx_packets;
 		sum->tx_bytes += s->tx_bytes;
+		sum->rx_packets += s->rx_packets;
+		sum->rx_bytes += s->rx_bytes;
 	}
 }
 
@@ -258,6 +260,8 @@ void nexthop_stats_get(const struct nexthop *nh, struct nexthop_stats *stats) {
 	base = &stats_base[nh->stats_id];
 	stats->tx_packets -= base->tx_packets;
 	stats->tx_bytes -= base->tx_bytes;
+	stats->rx_packets -= base->rx_packets;
+	stats->rx_bytes -= base->rx_bytes;
 }
 
 // The workers are still counting: do not write in their tables.

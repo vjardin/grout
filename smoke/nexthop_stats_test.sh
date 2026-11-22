@@ -92,6 +92,10 @@ check_stats 100 $count $((count * ip4_len))
 ip netns exec n2 ping -i0.01 -c$count -s$payload -n 16.1.0.1
 check_stats 100 $((2 * count)) $((2 * count * ip4_len))
 
+# L3 nexthops cannot tell which nexthop a packet comes from.
+grcli -j nexthop stats | jq -e 'all(.[]; .rx_packets == 0 and .rx_bytes == 0)' \
+	|| fail "packets received from an L3 nexthop"
+
 grcli stats reset
 check_stats 100 0 0
 check_stats 101 0 0

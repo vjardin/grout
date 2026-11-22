@@ -614,8 +614,10 @@ static cmd_status_t nh_stats(struct gr_api_client *c, const struct ec_pnode *p) 
 	gr_table_column(table, "IFACE", GR_DISP_LEFT); // 2
 	gr_table_column(table, "TYPE", GR_DISP_LEFT); // 3
 	gr_table_column(table, "INFO", GR_DISP_LEFT); // 4
-	gr_table_column(table, "TX_PACKETS", GR_DISP_RIGHT | GR_DISP_INT); // 5
-	gr_table_column(table, "TX_BYTES", GR_DISP_RIGHT | GR_DISP_INT); // 6
+	gr_table_column(table, "RX_PACKETS", GR_DISP_RIGHT | GR_DISP_INT); // 5
+	gr_table_column(table, "RX_BYTES", GR_DISP_RIGHT | GR_DISP_INT); // 6
+	gr_table_column(table, "TX_PACKETS", GR_DISP_RIGHT | GR_DISP_INT); // 7
+	gr_table_column(table, "TX_BYTES", GR_DISP_RIGHT | GR_DISP_INT); // 8
 
 	gr_api_client_stream_foreach (stats, ret, c, GR_NH_STATS_LIST, sizeof(req), &req) {
 		gr_table_cell(table, 0, "%s", iface_name_from_id(c, stats->nh.vrf_id));
@@ -625,8 +627,10 @@ static cmd_status_t nh_stats(struct gr_api_client *c, const struct ec_pnode *p) 
 		gr_table_cell(table, 3, "%s", gr_nh_type_name(stats->nh.type));
 		if (cli_nexthop_format(buf, sizeof(buf), c, &stats->nh, false) > 0)
 			gr_table_cell(table, 4, "%s", buf);
-		gr_table_cell(table, 5, "%lu", stats->tx_packets);
-		gr_table_cell(table, 6, "%lu", stats->tx_bytes);
+		gr_table_cell(table, 5, "%lu", stats->rx_packets);
+		gr_table_cell(table, 6, "%lu", stats->rx_bytes);
+		gr_table_cell(table, 7, "%lu", stats->tx_packets);
+		gr_table_cell(table, 8, "%lu", stats->tx_bytes);
 
 		if (gr_table_print_row(table) < 0)
 			break;

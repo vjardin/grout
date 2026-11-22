@@ -358,6 +358,9 @@ GR_REQ(GR_NH_FLUSH, struct gr_nh_flush_req, struct gr_empty);
 struct gr_nh_stats {
 	uint64_t tx_packets;
 	uint64_t tx_bytes;
+	// Only for the nexthop types that know which nexthop a packet comes from.
+	uint64_t rx_packets;
+	uint64_t rx_bytes;
 	struct gr_nexthop nh;
 };
 
