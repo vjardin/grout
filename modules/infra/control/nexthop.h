@@ -25,11 +25,12 @@ struct __rte_cache_aligned nexthop {
 
 	uint32_t ref_count;
 	uint32_t route_count; // number of routes referencing this nexthop
+	uint32_t nh_count; // number of references held by other nexthops
 
 	uint8_t info
 		[RTE_CACHE_LINE_MIN_SIZE * 2
 		 - RTE_ALIGN_CEIL(
-			 sizeof(struct gr_nexthop_base) + 2 * sizeof(uint32_t),
+			 sizeof(struct gr_nexthop_base) + 3 * sizeof(uint32_t),
 			 alignof(void *)
 		 )] __rte_aligned(alignof(void *));
 };
@@ -174,6 +175,19 @@ static inline void nexthop_route_incref(struct nexthop *nh) {
 static inline void nexthop_route_decref(struct nexthop *nh) {
 	assert(nh->route_count > 0);
 	nh->route_count--;
+	nexthop_decref(nh);
+}
+
+// Take the reference that a nexthop holds on another one.
+static inline void nexthop_nh_incref(struct nexthop *nh) {
+	nh->nh_count++;
+	nexthop_incref(nh);
+}
+
+// Drop the reference that a nexthop holds on another one.
+static inline void nexthop_nh_decref(struct nexthop *nh) {
+	assert(nh->nh_count > 0);
+	nh->nh_count--;
 	nexthop_decref(nh);
 }
 
