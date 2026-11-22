@@ -54,6 +54,8 @@ static uint16_t ip6_input_local_process(
 		d->dst = ip->dst_addr;
 		d->len = rte_be_to_cpu_16(ip->payload_len);
 		d->hop_limit = ip->hop_limits;
+		d->tc = (rte_be_to_cpu_32(ip->vtc_flow) & RTE_IPV6_HDR_TC_MASK)
+			>> RTE_IPV6_HDR_TC_SHIFT;
 		d->proto = ip->proto;
 		d->iface = iface;
 		d->ext_offset = sizeof(*ip);
@@ -299,6 +301,21 @@ static void ip6_local_sets_packet_type(void **) {
 	assert_int_equal(fm.mbuf.packet_type, RTE_PTYPE_L3_IPV6);
 }
 
+static void ip6_local_saves_traffic_class(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fm.ipv6_hdr.vtc_flow = rte_cpu_to_be_32(
+		(6 << 28) | (IPTOS_DSCP_EF << RTE_IPV6_HDR_TC_SHIFT)
+	);
+
+	expect_uint_value(rte_node_enqueue_x1, next, TEST_EDGE);
+	ip6_input_local_process(NULL, NULL, &obj, 1);
+
+	assert_int_equal(ip6_local_mbuf_data(&fm.mbuf)->tc, IPTOS_DSCP_EF);
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup(ip6_local_payload_len_beyond_mbuf, setup),
@@ -307,6 +324,7 @@ int main(void) {
 		cmocka_unit_test_setup(ip6_local_payload_len_below_mbuf, setup),
 		cmocka_unit_test_setup(ip6_local_valid_length, setup),
 		cmocka_unit_test_setup(ip6_local_sets_packet_type, setup),
+		cmocka_unit_test_setup(ip6_local_saves_traffic_class, setup),
 	};
 
 	return cmocka_run_group_tests(tests, NULL, NULL);
