@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 Vincent Jardin
+#
+# name: LISP xTR, IPv6 RLOCs
+#
+# grout is the tunnel router of a LISP site with a static mapping:
+#   - VRF main holds the underlay (p0, local and remote RLOCs);
+#   - VRF tenant holds the EIDs (LISP interface of instance ID 100, port p1).
+# Traffic from p1 to 16.0.0.0/16 is encapsulated out p0. LISP traffic received
+# on p0 is decapsulated and sent to 48.0.0.0/16 out p1.
+
+interface set port p0 mac 02:00:00:00:00:00
+
+# Underlay (VRF main).
+address add fd00:0::1/64 iface p0
+nexthop add l3 iface p0 id 1 address fd00:0::2 mac 02:00:00:00:01:00
+route add fd00:0::2/128 via id 1
+
+# Tenant VRF.
+interface add vrf tenant
+interface add lisp lisp100 iid 100 local6 fd00:0::1 vrf tenant encap_vrf main
+
+# Site side.
+interface set port p1 mac 02:00:00:00:00:01 vrf tenant
+address add 172.16.1.1/24 iface p1
+nexthop add l3 iface p1 id 2 address 172.16.1.2 mac 02:00:00:00:01:01
+route add 48.0.0.0/16 via id 2 vrf tenant
+
+# EID-to-RLOC mapping.
+nexthop add lisp iface lisp100 rloc fd00:0::2 id 3
+route add 16.0.0.0/16 via id 3 vrf tenant

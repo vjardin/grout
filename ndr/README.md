@@ -122,8 +122,9 @@ the same convention works in both. A harness can list the scenarios by globbing
 
 Plain (non-tunneled) directions send 64-byte frames (60 bytes on the wire plus
 the 4-byte FCS added by the NIC), the RFC 2544 minimum. Directions that add
-encapsulation (SRv6, VXLAN) produce larger frames; the profile pads only the
-plain side up to 64 bytes and lets the encapsulated side keep its natural size.
+encapsulation (SRv6, VXLAN, LISP) produce larger frames; the profile pads only
+the plain side up to 64 bytes and lets the encapsulated side keep its natural
+size.
 Each profile documents its own sizes.
 
 ## Flow spreading
@@ -145,6 +146,12 @@ where a zero checksum is invalid). In the encap direction the customer UDP
 source port is swept: grout derives the outer VXLAN source port from the inner
 flow hash (`vxlan_src_port(m->hash.rss)`), so varying the customer flow spreads
 the encapsulated traffic it emits.
+
+The LISP scenarios follow the same rule: the *outer* UDP source port is swept in
+the decap direction and the customer UDP source port in the encap direction.
+The outer UDP checksum is zero, as RFC 9300 recommends for LISP data packets,
+including over IPv6 where grout accepts it for the LISP port. Nothing has to be
+recomputed when the port is swept.
 
 ## Trying the scenarios locally (dummy harness)
 
