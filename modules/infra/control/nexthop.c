@@ -487,6 +487,8 @@ static void nh_cleanup_interface_cb(struct nexthop *nh, void *priv) {
 
 static void nexthop_iface_cleanup(uint32_t /*ev_type*/, const void *data) {
 	const struct iface *iface = data;
+
+	nexthop_routes_cleanup_iface(iface->id, !gr_config.skip_route_events_on_iface_down);
 	nexthop_iter(nh_cleanup_interface_cb, (void *)(uintptr_t)iface->id);
 }
 

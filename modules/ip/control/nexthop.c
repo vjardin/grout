@@ -350,6 +350,7 @@ static struct nexthop_af_ops nh_ops = {
 	.resolve = nh4_resolve_cb,
 	.solicit = arp_output_request_solicit,
 	.cleanup_routes = rib4_cleanup,
+	.cleanup_routes_iface = rib4_cleanup_iface_nexthops,
 	.cleanup_learned = rib4_cleanup_learned,
 	.resubmit = ip_resubmit_cb,
 };
