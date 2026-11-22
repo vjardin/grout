@@ -487,8 +487,30 @@ static void nh_cleanup_interface_cb(struct nexthop *nh, void *priv) {
 	}
 }
 
+// Whether a nexthop that goes away with the interface is still used by routes.
+static bool iface_nexthops_have_routes(uint16_t iface_id) {
+	const struct nexthop_info_l3 *l3;
+	struct nexthop *nh = NULL;
+
+	while ((nh = nexthop_next(nh)) != NULL) {
+		if (nh->iface_id != iface_id || nh->route_count == 0)
+			continue;
+		if (nh->type == GR_NH_T_L3) {
+			l3 = nexthop_info_l3(nh);
+			if ((l3->flags & NH_LOCAL_ADDR_FLAGS) == NH_LOCAL_ADDR_FLAGS)
+				continue;
+		}
+		return true;
+	}
+
+	return false;
+}
+
 static void nexthop_iface_cleanup(uint32_t /*ev_type*/, const void *data) {
 	const struct iface *iface = data;
+
+	if (iface_nexthops_have_routes(iface->id))
+		nexthop_routes_cleanup_iface(iface->id, !gr_config.skip_route_events_on_iface_down);
 	nexthop_iter(nh_cleanup_interface_cb, (void *)(uintptr_t)iface->id);
 }
 

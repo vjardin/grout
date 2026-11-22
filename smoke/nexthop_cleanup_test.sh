@@ -123,6 +123,14 @@ has_route 10.22.0.0/24 || fail "route via group 22 deleted"
 has_route 172.16.0.0/24 || fail "connected route of p0 deleted"
 has_route 172.16.2.0/24 v1 || fail "connected route of v1 deleted"
 
+# The nexthops of an interface which no route uses.
+port_add p3
+grcli address add 172.16.3.1/24 iface p3
+grcli nexthop add l3 iface p3 id 18 address 172.16.3.2 mac 02:00:00:00:03:02
+grcli interface del p3
+has_nexthop 18 && fail "nexthop 18 still present"
+has_route 10.0.0.0/24 || fail "route via nexthop 10 deleted"
+
 # The groups can still be used and deleted.
 grcli nexthop add group id 20 member 10
 grcli nexthop del 22
