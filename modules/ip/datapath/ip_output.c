@@ -115,11 +115,14 @@ ip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 			break;
 		case NAT_VERDICT_DROP:
 			edge = DROP;
-			break;
+			goto next;
 		}
 
-		if (edge != ETH_OUTPUT)
+		if (edge != ETH_OUTPUT) {
+			if (nh->type == GR_NH_T_L3)
+				nexthop_stats_tx(nh, mbuf);
 			goto next;
+		}
 
 		l3 = nexthop_info_l3(nh);
 
@@ -150,6 +153,7 @@ ip_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 		} else {
 			eth_data->vtep.af = GR_AF_UNSPEC;
 		}
+		nexthop_stats_tx(nh, mbuf);
 		sent++;
 next:
 		if (gr_mbuf_is_traced(mbuf)) {

@@ -5,6 +5,7 @@
 #include "log.h"
 #include "metrics.h"
 #include "module.h"
+#include "nexthop.h"
 #include "port.h"
 #include "rxtx.h"
 #include "vec.h"
@@ -212,6 +213,8 @@ static struct api_out stats_reset(const void * /*request*/, struct api_ctx *) {
 
 	// Reset software stats for all interfaces.
 	memset(iface_stats, 0, gr_config.max_ifaces * sizeof(*iface_stats));
+
+	nexthop_stats_reset();
 
 	while ((iface = iface_next(GR_IFACE_TYPE_PORT, iface)) != NULL) {
 		struct iface_info_port *port = iface_info_port(iface);
