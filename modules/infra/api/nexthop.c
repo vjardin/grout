@@ -149,6 +149,8 @@ static struct api_out nh_stats_list(const void *request, struct api_ctx *ctx) {
 		nexthop_stats_get(nh, &stats);
 		resp->tx_packets = stats.tx_packets;
 		resp->tx_bytes = stats.tx_bytes;
+		resp->rx_packets = stats.rx_packets;
+		resp->rx_bytes = stats.rx_bytes;
 		memcpy(&resp->nh, pub_nh, len);
 		api_send(ctx, offsetof(struct gr_nh_stats, nh) + len, resp);
 		free(pub_nh);
