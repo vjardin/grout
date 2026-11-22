@@ -327,9 +327,9 @@ static int rib6_insert_or_replace(
 		);
 	}
 
-	nexthop_incref(nh);
+	nexthop_route_incref(nh);
 	if (existing)
-		nexthop_decref(existing);
+		nexthop_route_decref(existing);
 
 	return 0;
 }
@@ -400,7 +400,7 @@ int rib6_delete(
 	assert(route_prefixlens[vrf_id][prefixlen] > 0);
 	route_prefixlens[vrf_id][prefixlen]--;
 
-	nexthop_decref(nh);
+	nexthop_route_decref(nh);
 
 	return 0;
 }
@@ -842,7 +842,7 @@ static int fib6_migrate_cb(
 					}
 				);
 			}
-			nexthop_decref((struct nexthop *)nh);
+			nexthop_route_decref((struct nexthop *)nh);
 		}
 		return 0;
 	}
