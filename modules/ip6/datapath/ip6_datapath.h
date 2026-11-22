@@ -24,6 +24,11 @@ GR_MBUF_PRIV_DATA_TYPE(ip6_local_mbuf_data, {
 	uint8_t proto;
 });
 
+GR_MBUF_PRIV_DATA_TYPE(ip6_too_big_mbuf_data, {
+	const struct nexthop *nh;
+	uint16_t mtu;
+});
+
 void ip6_input_local_add_proto(uint8_t proto, const char *next_node);
 void ip6_input_register_nexthop_type(gr_nh_type_t type, const char *next_node);
 void ip6_output_register_interface_type(gr_iface_type_t type, const char *next_node);
