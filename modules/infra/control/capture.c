@@ -50,7 +50,7 @@ static void capture_promisc(struct iface *iface, bool enabled) {
 		LOG(NOTICE, "%s: iface_set_promisc: %s", iface->name, strerror(errno));
 }
 
-// Whether an interface takes part in an "any" capture. VRF and IPIP interfaces
+// Whether an interface takes part in an "any" capture. VRF, IPIP and LISP interfaces
 // carry raw IP (pcapng LINKTYPE_RAW) which cannot be mixed with the Ethernet
 // interfaces in a single capture file, so they are captured only when selected
 // explicitly by name.
@@ -58,6 +58,7 @@ static bool capture_any_includes(const struct iface *iface) {
 	switch (iface->type) {
 	case GR_IFACE_TYPE_VRF:
 	case GR_IFACE_TYPE_IPIP:
+	case GR_IFACE_TYPE_LISP:
 		return false;
 	default:
 		return true;

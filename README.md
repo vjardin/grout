@@ -41,6 +41,7 @@ FRR for dynamic routing via a dedicated zebra dplane plugin.
 * VXLAN tunnels
 * Bond/LACP interfaces
 * IP in IP tunnels
+* LISP tunnels
 * SRv6
 * DHCP client
 * Static IPv4 DNAT
