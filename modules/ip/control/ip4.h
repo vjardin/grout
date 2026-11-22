@@ -17,6 +17,8 @@
 #include <stdint.h>
 
 const struct nexthop *fib4_lookup(uint16_t vrf_id, ip4_addr_t ip, uint32_t flow_id);
+// Same without picking a member when the nexthop of the route is a group.
+const struct nexthop *fib4_lookup_raw(uint16_t vrf_id, ip4_addr_t ip);
 
 static inline struct nexthop *nh4_lookup(uint16_t vrf_id, ip4_addr_t ip) {
 	// XXX: should we scope ip4 nh lookup based on rfc3927 ?

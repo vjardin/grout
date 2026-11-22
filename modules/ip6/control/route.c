@@ -147,8 +147,8 @@ static inline struct nexthop *nh_id_to_ptr(uintptr_t id) {
 	return (struct nexthop *)id;
 }
 
-const struct nexthop *
-fib6_lookup(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip, uint32_t flow_id) {
+static inline const struct nexthop *
+fib6_lookup_nh(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip) {
 	struct rte_fib6 *fib6 = get_fib6(vrf_id);
 	const struct rte_ipv6_addr *scoped_ip;
 	struct rte_ipv6_addr tmp;
@@ -162,8 +162,19 @@ fib6_lookup(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip, 
 	if (nh_id == 0)
 		return errno_set_null(EHOSTUNREACH);
 
-	const struct nexthop *nh = nh_id_to_ptr(nh_id);
-	if (nh->type == GR_NH_T_GROUP) {
+	return nh_id_to_ptr(nh_id);
+}
+
+const struct nexthop *
+fib6_lookup_raw(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip) {
+	return fib6_lookup_nh(vrf_id, iface_id, ip);
+}
+
+const struct nexthop *
+fib6_lookup(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip, uint32_t flow_id) {
+	const struct nexthop *nh = fib6_lookup_nh(vrf_id, iface_id, ip);
+
+	if (nh != NULL && nh->type == GR_NH_T_GROUP) {
 		nh = nexthop_group_get_nh(nexthop_info_group(nh), flow_id);
 		if (unlikely(nh == NULL))
 			return errno_set_null(ENONET);
