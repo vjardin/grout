@@ -30,6 +30,7 @@ ip6_error_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	const struct ip6_error_ctx *ctx = ip6_error_ctx(node);
 	struct icmp6_err_dest_unreach *du;
 	struct icmp6_err_ttl_exceeded *te;
+	struct icmp6_err_pkt_too_big *tb;
 	const struct nexthop_info_l3 *l3;
 	struct ip6_local_mbuf_data *d;
 	const struct iface *iface;
@@ -38,6 +39,7 @@ ip6_error_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 	struct rte_mbuf *mbuf;
 	struct icmp6 *icmp6;
 	rte_edge_t edge;
+	uint16_t mtu;
 
 	for (uint16_t i = 0; i < nb_objs; i++) {
 		mbuf = objs[i];
@@ -70,6 +72,15 @@ ip6_error_process(struct rte_graph *graph, struct rte_node *node, void **objs, u
 				edge = NO_HEADROOM;
 				goto next;
 			}
+			break;
+		case ICMP6_ERR_PKT_TOO_BIG:
+			mtu = ip6_too_big_mbuf_data(mbuf)->mtu;
+			tb = gr_mbuf_prepend(mbuf, tb);
+			if (unlikely(tb == NULL)) {
+				edge = NO_HEADROOM;
+				goto next;
+			}
+			tb->mtu = rte_cpu_to_be_32(mtu);
 			break;
 		default:
 			ABORT("unexpected icmp_type value %hhu", ctx->icmp_type);
@@ -122,6 +133,13 @@ static int no_route_init(const struct rte_graph *, struct rte_node *node) {
 	return 0;
 }
 
+static int pkt_too_big_init(const struct rte_graph *, struct rte_node *node) {
+	struct ip6_error_ctx *ctx = ip6_error_ctx(node);
+	ctx->icmp_type = ICMP6_ERR_PKT_TOO_BIG;
+	ctx->icmp_code = 0;
+	return 0;
+}
+
 static struct rte_node_register dest_unreach_node = {
 	.name = "ip6_error_dest_unreach",
 	.process = ip6_error_process,
@@ -146,6 +164,18 @@ static struct rte_node_register ttl_exceeded_node = {
 	.init = ttl_exceeded_init,
 };
 
+static struct rte_node_register pkt_too_big_node = {
+	.name = "ip6_error_pkt_too_big",
+	.process = ip6_error_process,
+	.nb_edges = EDGE_COUNT,
+	.next_nodes = {
+		[ICMP_OUTPUT] = "icmp6_output",
+		[NO_HEADROOM] = "error_no_headroom",
+		[NO_IP] = "error_no_local_ip",
+	},
+	.init = pkt_too_big_init,
+};
+
 static struct gr_node_info dest_unreach_info = {
 	.node = &dest_unreach_node,
 	.type = GR_NODE_T_L3,
@@ -156,5 +186,11 @@ static struct gr_node_info ttl_exceeded_info = {
 	.type = GR_NODE_T_L3,
 };
 
+static struct gr_node_info pkt_too_big_info = {
+	.node = &pkt_too_big_node,
+	.type = GR_NODE_T_L3,
+};
+
 GR_NODE_REGISTER(dest_unreach_info);
 GR_NODE_REGISTER(ttl_exceeded_info);
+GR_NODE_REGISTER(pkt_too_big_info);

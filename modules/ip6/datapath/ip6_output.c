@@ -22,6 +22,7 @@ enum {
 	DEST_UNREACH,
 	ERROR,
 	TOO_BIG,
+	PKT_TOO_BIG,
 	EDGE_COUNT,
 };
 
@@ -95,7 +96,12 @@ ip6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		}
 
 		if (rte_pktmbuf_pkt_len(mbuf) > iface->mtu) {
-			edge = TOO_BIG;
+			if (iface->flags & GR_IFACE_F_PKT_TOO_BIG) {
+				ip6_too_big_mbuf_data(mbuf)->mtu = iface->mtu;
+				edge = PKT_TOO_BIG;
+			} else {
+				edge = TOO_BIG;
+			}
 			goto next;
 		}
 
@@ -158,6 +164,7 @@ static struct rte_node_register output_node = {
 		[ERROR] = "ip6_output_error",
 		[DEST_UNREACH] = "ip6_error_dest_unreach",
 		[TOO_BIG] = "ip6_output_too_big",
+		[PKT_TOO_BIG] = "ip6_error_pkt_too_big",
 	},
 };
 

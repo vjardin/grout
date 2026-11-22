@@ -390,6 +390,10 @@ int iface_reconfig(
 			iface->flags |= GR_IFACE_F_NEIGH_SNOOP;
 		else
 			iface->flags &= ~GR_IFACE_F_NEIGH_SNOOP;
+		if (conf->flags & GR_IFACE_F_PKT_TOO_BIG)
+			iface->flags |= GR_IFACE_F_PKT_TOO_BIG;
+		else
+			iface->flags &= ~GR_IFACE_F_PKT_TOO_BIG;
 		if ((ret = iface_set_up_down(iface, conf->flags & GR_IFACE_F_UP)) < 0)
 			goto err;
 	}

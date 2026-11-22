@@ -237,6 +237,8 @@ static ssize_t iface_flags_format(char *buf, size_t len, const struct gr_iface *
 		SAFE_BUF(snprintf, len, " tracing");
 	if (iface->flags & (GR_IFACE_F_SNAT_STATIC | GR_IFACE_F_SNAT_DYNAMIC))
 		SAFE_BUF(snprintf, len, " snat");
+	if (iface->flags & GR_IFACE_F_PKT_TOO_BIG)
+		SAFE_BUF(snprintf, len, " pkt_too_big");
 
 	return n;
 err:
@@ -291,6 +293,15 @@ uint64_t parse_iface_args(
 		set_attrs |= GR_IFACE_SET_FLAGS;
 	} else if (neigh_snoop != NULL && strcmp(neigh_snoop, "off") == 0) {
 		iface->flags &= ~GR_IFACE_F_NEIGH_SNOOP;
+		set_attrs |= GR_IFACE_SET_FLAGS;
+	}
+
+	const char *pkt_too_big = arg_str(p, "PKT_TOO_BIG");
+	if (pkt_too_big != NULL && strcmp(pkt_too_big, "on") == 0) {
+		iface->flags |= GR_IFACE_F_PKT_TOO_BIG;
+		set_attrs |= GR_IFACE_SET_FLAGS;
+	} else if (pkt_too_big != NULL && strcmp(pkt_too_big, "off") == 0) {
+		iface->flags &= ~GR_IFACE_F_PKT_TOO_BIG;
 		set_attrs |= GR_IFACE_SET_FLAGS;
 	}
 

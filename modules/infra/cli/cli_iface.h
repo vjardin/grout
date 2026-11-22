@@ -77,7 +77,8 @@ int arg_iface(
 	CLI_CONTEXT(INTERFACE_CTX(root), CTX_ARG("config", "Interface subsystem configuration."))
 
 #define IFACE_ATTRS_CMD                                                                            \
-	"(up|down),(promisc PROMISC),(neigh_snoop NEIGH_SNOOP),(mtu MTU),"                         \
+	"(up|down),(promisc PROMISC),(neigh_snoop NEIGH_SNOOP),(pkt_too_big PKT_TOO_BIG),"         \
+	"(mtu MTU),"                                                                               \
 	"((vrf VRF)|(domain DOMAIN)),(description DESCR)"
 
 #define IFACE_ATTRS_ARGS                                                                           \
@@ -90,6 +91,10 @@ int arg_iface(
 		with_help(                                                                         \
 			"Enable/disable neighbor snooping (learn from unsolicited ARP/NDP).",      \
 			EC_NODE_OR("NEIGH_SNOOP", ec_node_str("", "on"), ec_node_str("", "off"))   \
+		),                                                                                 \
+		with_help(                                                                         \
+			"Send ICMPv6 packet too big errors (default: only count the packets).",    \
+			EC_NODE_OR("PKT_TOO_BIG", ec_node_str("", "on"), ec_node_str("", "off"))   \
 		),                                                                                 \
 		with_help(                                                                         \
 			"Maximum transmission unit size.",                                         \
