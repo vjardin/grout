@@ -66,6 +66,7 @@ static void remove_group_member_cb(struct nexthop *nh, void *deleted) {
 			g->members[i].nh = g->members[g->n_members - 1].nh;
 			g->members[i].weight = g->members[g->n_members - 1].weight;
 			g->n_members--;
+			((struct nexthop *)deleted)->nh_count--;
 			removed = true;
 		}
 	}
@@ -80,6 +81,8 @@ static void remove_group_member_cb(struct nexthop *nh, void *deleted) {
 }
 
 static void group_remove_references(struct nexthop *nh) {
+	if (nh->nh_count == 0)
+		return;
 	nexthop_iter(remove_group_member_cb, nh);
 }
 
@@ -87,7 +90,7 @@ static void group_free(struct nexthop *nh) {
 	struct nexthop_info_group *pvt = nexthop_info_group(nh);
 
 	for (uint32_t i = 0; i < pvt->n_members; i++)
-		nexthop_decref(pvt->members[i].nh);
+		nexthop_nh_decref(pvt->members[i].nh);
 	rte_free(pvt->members);
 	rte_free(pvt->reta);
 }
@@ -133,7 +136,7 @@ static int group_import_info(struct nexthop *nh, const void *info) {
 		reta_size = 0;
 		reta = NULL;
 		one = members[0].nh;
-		nexthop_incref(one);
+		nexthop_nh_incref(one);
 	} else if (group->n_members > 1) {
 		// Order by desc weight: if we have too many nh in the nhg, the ones with
 		// a higher weight will be included.
@@ -160,7 +163,7 @@ static int group_import_info(struct nexthop *nh, const void *info) {
 		}
 
 		for (uint16_t i = 0; i < group->n_members; i++)
-			nexthop_incref(members[i].nh);
+			nexthop_nh_incref(members[i].nh);
 
 		group_reta_distribute(group->n_members, reta_size, members, reta);
 	}
@@ -177,7 +180,7 @@ static int group_import_info(struct nexthop *nh, const void *info) {
 	rte_rcu_qsbr_synchronize(gr_datapath_rcu(), RTE_QSBR_THRID_INVALID);
 
 	for (uint32_t i = 0; i < n_tmp; i++)
-		nexthop_decref(tmp[i].nh);
+		nexthop_nh_decref(tmp[i].nh);
 
 	rte_free(old_reta);
 	rte_free(tmp);
