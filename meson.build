@@ -226,6 +226,12 @@ executable(
 )
 
 executable(
+  'lisp_inject', files('smoke/lisp_inject.c') + grout_header,
+  include_directories: api_inc,
+  install: false,
+)
+
+executable(
   'ping_perf', files('smoke/ping_perf.c') + grout_header,
   include_directories: api_inc,
   install: false,
