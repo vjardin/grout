@@ -66,6 +66,7 @@ static void remove_group_member_cb(struct nexthop *nh, void *deleted) {
 			g->members[i].nh = g->members[g->n_members - 1].nh;
 			g->members[i].weight = g->members[g->n_members - 1].weight;
 			g->n_members--;
+			g->members[g->n_members].nh = NULL;
 			((struct nexthop *)deleted)->nh_count--;
 			removed = true;
 		}
@@ -88,9 +89,10 @@ static void group_remove_references(struct nexthop *nh) {
 
 static void group_free(struct nexthop *nh) {
 	struct nexthop_info_group *pvt = nexthop_info_group(nh);
+	struct nexthop *member;
 
-	for (uint32_t i = 0; i < pvt->n_members; i++)
-		nexthop_nh_decref(pvt->members[i].nh);
+	nexthop_group_foreach (member, pvt)
+		nexthop_nh_decref(member);
 	rte_free(pvt->members);
 	rte_free(pvt->reta);
 }
@@ -113,10 +115,11 @@ static int group_import_info(struct nexthop *nh, const void *info) {
 	uint32_t reta_size = 0;
 	uint32_t n_tmp = 0;
 
+	// One more for the NULL nexthop that ends the list.
 	members = rte_zmalloc(
-		__func__, group->n_members * sizeof(pvt->members[0]), RTE_CACHE_LINE_SIZE
+		__func__, (group->n_members + 1) * sizeof(pvt->members[0]), RTE_CACHE_LINE_SIZE
 	);
-	if (group->n_members > 0 && members == NULL) {
+	if (members == NULL) {
 		errno_set(ENOMEM);
 		goto cleanup;
 	}

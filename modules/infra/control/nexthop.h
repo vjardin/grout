@@ -109,9 +109,16 @@ GR_NH_TYPE_INFO(GR_NH_T_GROUP, nexthop_info_group, {
 	uint16_t n_members;
 	uint16_t reta_size; // MUST BE A POWER OF TWO
 	struct nexthop *nh; // shortcut when there is a single nexthop in the group
-	struct nh_group_member *members;
+	struct nh_group_member *members; // terminated by a NULL nexthop
 	struct nexthop **reta;
 });
+
+// Iterate over the nexthops of the members of a group, from the datapath as
+// well. Each one is read once: the control plane may replace it meanwhile.
+#define nexthop_group_foreach(var, nhg)                                                            \
+	for (const struct nh_group_member *var##_member = (nhg)->members;                          \
+	     var##_member != NULL && (var = var##_member->nh) != NULL;                             \
+	     var##_member++)
 
 static inline struct nexthop *
 nexthop_group_get_nh(struct nexthop_info_group *nhg, uint32_t flow_id) {
