@@ -463,12 +463,9 @@ reconfig:
 		clock_update();
 		rte_graph_walk(graph);
 		clock_set_trusted(false);
+		rte_rcu_qsbr_quiescent(rcu, rte_lcore_id());
 
 		if (++loop == HOUSEKEEPING_INTERVAL) {
-			// When RCU reclamation will be done in datapath workers,
-			// this will probably need to be called for every loop.
-			rte_rcu_qsbr_quiescent(rcu, rte_lcore_id());
-
 			if (atomic_load(&w->shutdown) || atomic_load(&w->next_config) != cur) {
 				worker_active_dec();
 				rte_rcu_qsbr_thread_offline(rcu, rte_lcore_id());
@@ -504,7 +501,9 @@ reconfig:
 				max_sleep_us = atomic_load(&w->max_sleep_us);
 				if (ctx.last_count == 0 && max_sleep_us > 0) {
 					sleep = sleep >= max_sleep_us ? max_sleep_us : (sleep + 1);
+					rte_rcu_qsbr_thread_offline(rcu, rte_lcore_id());
 					usleep(sleep);
+					rte_rcu_qsbr_thread_online(rcu, rte_lcore_id());
 					ctx.w_stats->sleep_cycles += rte_rdtsc() - timestamp_tmp;
 					ctx.w_stats->n_sleeps += 1;
 				} else {
