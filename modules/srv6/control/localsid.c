@@ -166,10 +166,12 @@ static int srv6_local_nh_import_info(struct nexthop *nh, const void *info) {
 	if (l3_nh != old_l3_nh) {
 		if (l3_nh != NULL && !l3_nh_created)
 			nexthop_incref(l3_nh);
+		if (l3_nh != NULL)
+			l3_nh->nh_count++;
 		priv->l3_nh = l3_nh;
 		if (old_l3_nh != NULL) {
 			rte_rcu_qsbr_synchronize(gr_datapath_rcu(), RTE_QSBR_THRID_INVALID);
-			nexthop_decref(old_l3_nh);
+			nexthop_nh_decref(old_l3_nh);
 		}
 	}
 	priv->prev_iface_id = nh->iface_id;
@@ -199,8 +201,10 @@ static void remove_l3_ref_cb(struct nexthop *nh, void *deleted) {
 	if (nh->type != GR_NH_T_SR6_LOCAL)
 		return;
 	struct nexthop_info_srv6_local *priv = nexthop_info_srv6_local(nh);
-	if (priv->l3_nh == deleted)
+	if (priv->l3_nh == deleted) {
 		priv->l3_nh = NULL;
+		((struct nexthop *)deleted)->nh_count--;
+	}
 }
 
 static void srv6_local_remove_references(struct nexthop *nh) {
@@ -211,13 +215,14 @@ static void srv6_local_remove_references(struct nexthop *nh) {
 		set_srv6_local_key(&key, nh->iface_id, &priv->base);
 		rte_hash_del_key(srv6_local_hash, &key);
 	}
-	nexthop_iter(remove_l3_ref_cb, nh);
+	if (nh->nh_count > 0)
+		nexthop_iter(remove_l3_ref_cb, nh);
 }
 
 static void srv6_local_nh_free(struct nexthop *nh) {
 	struct nexthop_info_srv6_local *priv = nexthop_info_srv6_local(nh);
 	if (priv->l3_nh != NULL)
-		nexthop_decref(priv->l3_nh);
+		nexthop_nh_decref(priv->l3_nh);
 }
 
 static struct nexthop_type_ops nh_ops = {
