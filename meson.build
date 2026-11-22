@@ -231,6 +231,11 @@ executable(
   install: false,
 )
 
+executable(
+  'lisp_xtr', files('smoke/lisp_xtr.c'),
+  install: false,
+)
+
 # docs/ must come after grcli_exe since man pages are generated using grcli --man
 subdir('docs')
 
