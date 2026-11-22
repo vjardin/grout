@@ -23,11 +23,15 @@ unsigned nexthop_used_count(void);
 struct __rte_cache_aligned nexthop {
 	BASE(gr_nexthop_base);
 
-	uint32_t ref_count; // number of routes referencing this nexthop
+	uint32_t ref_count;
+	uint32_t route_count; // number of routes referencing this nexthop
 
 	uint8_t info
-		[RTE_CACHE_LINE_MIN_SIZE * 2 - sizeof(struct gr_nexthop_base)
-		 - sizeof(uint32_t)] __rte_aligned(alignof(void *));
+		[RTE_CACHE_LINE_MIN_SIZE * 2
+		 - RTE_ALIGN_CEIL(
+			 sizeof(struct gr_nexthop_base) + 2 * sizeof(uint32_t),
+			 alignof(void *)
+		 )] __rte_aligned(alignof(void *));
 };
 static_assert(sizeof(struct nexthop) <= (RTE_CACHE_LINE_MIN_SIZE * 2));
 
@@ -156,6 +160,19 @@ void nexthop_incref(struct nexthop *);
 // Decrement the reference counter of a nexthop.
 // When the counter drops to 0, the nexthop is destroyed and returned to the global pool.
 void nexthop_decref(struct nexthop *);
+
+// Take the reference that a route holds on its nexthop.
+static inline void nexthop_route_incref(struct nexthop *nh) {
+	nh->route_count++;
+	nexthop_incref(nh);
+}
+
+// Drop the reference that a route holds on its nexthop.
+static inline void nexthop_route_decref(struct nexthop *nh) {
+	assert(nh->route_count > 0);
+	nh->route_count--;
+	nexthop_decref(nh);
+}
 
 // Return the nexthop to the global pool regardless of its refcount.
 void nexthop_destroy(struct nexthop *);
