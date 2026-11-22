@@ -158,6 +158,10 @@ static int l3_reconfig(const struct gr_nexthop_config *c) {
 
 void nexthop_routes_cleanup(struct nexthop *nh, bool notify) {
 	const struct nexthop_af_ops *ops;
+
+	if (nh->route_count == 0)
+		return;
+
 	for (unsigned i = 0; i < ARRAY_DIM(af_ops); i++) {
 		ops = af_ops[i];
 		if (ops != NULL)
