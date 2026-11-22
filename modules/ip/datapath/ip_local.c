@@ -59,6 +59,7 @@ static uint16_t ip_input_local_process(
 				data->vrf_id = iface->vrf_id;
 				data->proto = ip->next_proto_id;
 				data->ttl = ip->time_to_live;
+				data->tos = ip->type_of_service;
 				mbuf->packet_type = RTE_PTYPE_L3_IPV4;
 				rte_pktmbuf_adj(mbuf, hdr_len);
 			}
@@ -208,6 +209,19 @@ static void ip_local_valid_length(void **) {
 	assert_int_equal(ip_local_mbuf_data(&fm.mbuf)->len, TEST_PAYLOAD_LEN);
 }
 
+static void ip_local_saves_tos(void **) {
+	struct fake_mbuf fm;
+	void *obj = &fm.mbuf;
+
+	fake_mbuf_init(&fm);
+	fm.ipv4_hdr.type_of_service = IPTOS_DSCP_EF;
+
+	expect_uint_value(rte_node_enqueue_x1, next, TEST_EDGE);
+	ip_input_local_process(NULL, NULL, &obj, 1);
+
+	assert_int_equal(ip_local_mbuf_data(&fm.mbuf)->tos, IPTOS_DSCP_EF);
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test_setup(ip_local_total_length_below_ihl, setup),
@@ -215,6 +229,7 @@ int main(void) {
 		cmocka_unit_test_setup(ip_local_total_length_beyond_first_segment, setup),
 		cmocka_unit_test_setup(ip_local_total_length_below_mbuf, setup),
 		cmocka_unit_test_setup(ip_local_valid_length, setup),
+		cmocka_unit_test_setup(ip_local_saves_tos, setup),
 	};
 
 	return cmocka_run_group_tests(tests, NULL, NULL);

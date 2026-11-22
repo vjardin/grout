@@ -22,6 +22,7 @@ GR_MBUF_PRIV_DATA_TYPE(ip6_local_mbuf_data, {
 	uint16_t ext_offset;
 	uint8_t hop_limit;
 	uint8_t proto;
+	uint8_t tc;
 });
 
 GR_MBUF_PRIV_DATA_TYPE(ip6_too_big_mbuf_data, {
