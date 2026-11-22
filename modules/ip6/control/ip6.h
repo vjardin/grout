@@ -19,6 +19,9 @@
 
 const struct nexthop *
 fib6_lookup(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip, uint32_t flow_id);
+// Same without picking a member when the nexthop of the route is a group.
+const struct nexthop *
+fib6_lookup_raw(uint16_t vrf_id, uint16_t iface_id, const struct rte_ipv6_addr *ip);
 
 static inline const struct rte_ipv6_addr *addr6_linklocal_scope(
 	const struct rte_ipv6_addr *ip,
