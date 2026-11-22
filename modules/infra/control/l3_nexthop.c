@@ -335,6 +335,7 @@ static struct gr_nexthop *l3_to_api(const struct nexthop *nh, size_t *len) {
 }
 
 static struct nexthop_type_ops l3_nh_ops = {
+	.stats = true,
 	.reconfig = l3_reconfig,
 	.lookup = l3_lookup,
 	.remove_references = l3_remove_references,

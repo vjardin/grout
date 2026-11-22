@@ -109,8 +109,11 @@ ip6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		// By default, it will be eth_output unless another output node was registered.
 		edge = iface_type_edges[iface->type];
 		mbuf_data(mbuf)->iface = iface;
-		if (edge != ETH_OUTPUT)
+		if (edge != ETH_OUTPUT) {
+			if (nh->type == GR_NH_T_L3)
+				nexthop_stats_tx(nh, mbuf);
 			goto next;
+		}
 
 		l3 = nexthop_info_l3(nh);
 
@@ -138,6 +141,7 @@ ip6_output_process(struct rte_graph *graph, struct rte_node *node, void **objs, 
 		} else {
 			eth_data->vtep.af = GR_AF_UNSPEC;
 		}
+		nexthop_stats_tx(nh, mbuf);
 		sent++;
 next:
 		if (gr_mbuf_is_traced(mbuf)) {

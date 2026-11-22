@@ -87,6 +87,7 @@ struct gr_nexthop_base {
 	gr_nh_origin_t origin;
 	uint16_t iface_id; // Overrides vrf_id with interface's VRF if specified.
 	uint16_t vrf_id;
+	bool stats; // Count the packets and bytes sent to this nexthop.
 	uint32_t nh_id; // User-assigned (0 = auto-allocate from pool).
 };
 
@@ -130,6 +131,7 @@ enum gr_nexthop_requests : uint32_t {
 	GR_NH_LIST,
 	GR_NH_GET,
 	GR_NH_FLUSH,
+	GR_NH_STATS_LIST,
 };
 
 // Nexthop events (not generated for GR_NH_ORIGIN_INTERNAL nexthops).
@@ -351,3 +353,13 @@ struct gr_nh_flush_req {
 };
 
 GR_REQ(GR_NH_FLUSH, struct gr_nh_flush_req, struct gr_empty);
+
+// Counters of a nexthop that has stats enabled.
+struct gr_nh_stats {
+	uint64_t tx_packets;
+	uint64_t tx_bytes;
+	struct gr_nexthop nh;
+};
+
+// List the counters of the nexthops that have stats enabled.
+GR_REQ_STREAM(GR_NH_STATS_LIST, struct gr_nh_list_req, struct gr_nh_stats);

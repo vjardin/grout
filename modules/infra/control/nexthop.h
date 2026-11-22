@@ -10,6 +10,7 @@
 #include <gr_net_types.h>
 #include <gr_nexthop.h>
 
+#include <rte_lcore.h>
 #include <rte_mbuf.h>
 
 #include <assert.h>
@@ -26,11 +27,12 @@ struct __rte_cache_aligned nexthop {
 	uint32_t ref_count;
 	uint32_t route_count; // number of routes referencing this nexthop
 	uint32_t nh_count; // number of references held by other nexthops
+	uint32_t stats_id; // index in nexthop_stats, 0 when stats are disabled
 
 	uint8_t info
 		[RTE_CACHE_LINE_MIN_SIZE * 2
 		 - RTE_ALIGN_CEIL(
-			 sizeof(struct gr_nexthop_base) + 3 * sizeof(uint32_t),
+			 sizeof(struct gr_nexthop_base) + 4 * sizeof(uint32_t),
 			 alignof(void *)
 		 )] __rte_aligned(alignof(void *));
 };
@@ -194,6 +196,31 @@ static inline void nexthop_nh_decref(struct nexthop *nh) {
 // Return the nexthop to the global pool regardless of its refcount.
 void nexthop_destroy(struct nexthop *);
 
+struct nexthop_stats {
+	uint64_t tx_packets;
+	uint64_t tx_bytes;
+};
+
+// One table per lcore, indexed by nexthop->stats_id.
+extern struct nexthop_stats *nexthop_stats[RTE_MAX_LCORE];
+
+// Count a packet sent to a nexthop.
+static inline void nexthop_stats_tx(const struct nexthop *nh, const struct rte_mbuf *m) {
+	struct nexthop_stats *stats;
+
+	if (nh->stats_id != 0) {
+		stats = &nexthop_stats[rte_lcore_id()][nh->stats_id];
+		stats->tx_packets++;
+		stats->tx_bytes += rte_pktmbuf_pkt_len(m);
+	}
+}
+
+// Get the counters of a nexthop, summed over all lcores.
+void nexthop_stats_get(const struct nexthop *, struct nexthop_stats *);
+
+// Reset the counters of all nexthops.
+void nexthop_stats_reset(void);
+
 // Callback for nh_iter().
 typedef void (*nh_iter_cb_t)(struct nexthop *nh, void *priv);
 
@@ -225,6 +252,8 @@ const struct nexthop_af_ops *nexthop_af_ops_from_nh(const struct nexthop *);
 const struct nexthop_af_ops *nexthop_af_ops_from_mbuf(const struct rte_mbuf *);
 
 struct nexthop_type_ops {
+	// The packets sent to nexthops of this type can be counted.
+	bool stats;
 	int (*reconfig)(const struct gr_nexthop_config *);
 	struct nexthop *(*lookup)(const struct gr_nexthop_base *, const void *info);
 	// Callback that will be invoked the nexthop refcount reaches zero.
