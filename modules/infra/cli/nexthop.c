@@ -48,6 +48,8 @@ fill_base_fields(struct gr_object *o, struct gr_api_client *c, const struct gr_n
 		gr_object_field(o, "iface", 0, "%s", iface_name_from_id(c, nh->iface_id));
 	gr_object_field(o, "vrf", 0, "%s", iface_name_from_id(c, nh->vrf_id));
 	gr_object_field(o, "origin", 0, "%s", gr_nh_origin_name(nh->origin));
+	if (nh->stats)
+		gr_object_field(o, "stats", GR_DISP_BOOL, "true");
 }
 
 void cli_nexthop_fill_object(
@@ -379,6 +381,7 @@ static cmd_status_t nh_l3_add(struct gr_api_client *c, const struct ec_pnode *p)
 		goto out;
 	if (arg_str(p, "remote"))
 		l3->flags |= GR_NH_F_REMOTE;
+	req->nh.stats = arg_str(p, "stats") != NULL;
 
 	if (gr_api_client_send_recv(c, GR_NH_ADD, len, req, NULL) < 0)
 		goto out;
@@ -584,6 +587,61 @@ static cmd_status_t nh_list(struct gr_api_client *c, const struct ec_pnode *p) {
 	return ret < 0 ? CMD_ERROR : CMD_SUCCESS;
 }
 
+static cmd_status_t nh_stats(struct gr_api_client *c, const struct ec_pnode *p) {
+	struct gr_nh_list_req req = {
+		.vrf_id = GR_VRF_ID_UNDEF,
+		.type = GR_NH_T_ALL,
+		.max_count = 1000,
+	};
+	const struct gr_nh_stats *stats;
+	const char *type;
+	char buf[128];
+	int ret;
+
+	if (arg_str(p, "VRF") != NULL && arg_vrf(c, p, "VRF", &req.vrf_id) < 0)
+		return CMD_ERROR;
+
+	type = arg_str(p, "TYPE");
+	if (type != NULL && nh_name_to_type(type, &req.type) < 0)
+		return CMD_ERROR;
+
+	if (arg_u16(p, "MAX", &req.max_count) < 0 && errno != ENOENT)
+		return CMD_ERROR;
+
+	struct gr_table *table = gr_table_new();
+	gr_table_column(table, "VRF", GR_DISP_LEFT); // 0
+	gr_table_column(table, "ID", GR_DISP_LEFT | GR_DISP_INT); // 1
+	gr_table_column(table, "IFACE", GR_DISP_LEFT); // 2
+	gr_table_column(table, "TYPE", GR_DISP_LEFT); // 3
+	gr_table_column(table, "INFO", GR_DISP_LEFT); // 4
+	gr_table_column(table, "TX_PACKETS", GR_DISP_RIGHT | GR_DISP_INT); // 5
+	gr_table_column(table, "TX_BYTES", GR_DISP_RIGHT | GR_DISP_INT); // 6
+
+	gr_api_client_stream_foreach (stats, ret, c, GR_NH_STATS_LIST, sizeof(req), &req) {
+		gr_table_cell(table, 0, "%s", iface_name_from_id(c, stats->nh.vrf_id));
+		if (stats->nh.nh_id != GR_NH_ID_UNSET)
+			gr_table_cell(table, 1, "%u", stats->nh.nh_id);
+		gr_table_cell(table, 2, "%s", iface_name_from_id(c, stats->nh.iface_id));
+		gr_table_cell(table, 3, "%s", gr_nh_type_name(stats->nh.type));
+		if (cli_nexthop_format(buf, sizeof(buf), c, &stats->nh, false) > 0)
+			gr_table_cell(table, 4, "%s", buf);
+		gr_table_cell(table, 5, "%lu", stats->tx_packets);
+		gr_table_cell(table, 6, "%lu", stats->tx_bytes);
+
+		if (gr_table_print_row(table) < 0)
+			break;
+	}
+
+	gr_table_free(table);
+
+	if (ret < 0 && errno == EXFULL) {
+		warnf("more nexthops not displayed");
+		ret = 0;
+	}
+
+	return ret < 0 ? CMD_ERROR : CMD_SUCCESS;
+}
+
 #define NEXTHOP_CONFIG_CTX(root)                                                                   \
 	CLI_CONTEXT(root, NEXTHOP_ARG, CTX_ARG("config", "Nexthop configuration."))
 
@@ -638,14 +696,15 @@ static int ctx_init(struct ec_node *root) {
 
 	ret = CLI_COMMAND(
 		NEXTHOP_ADD_CTX(root),
-		"l3 iface IFACE [(id ID),(address IP),(mac MAC),(remote)]",
+		"l3 iface IFACE [(id ID),(address IP),(mac MAC),(remote),(stats)]",
 		nh_l3_add,
 		"Add a new L3 nexthop.",
 		with_help("IPv4/6 address.", ec_node_re("IP", IP_ANY_RE)),
 		with_help("Ethernet address.", ec_node_re("MAC", ETH_ADDR_RE)),
 		with_help("Nexthop ID.", ec_node_uint("ID", 1, UINT32_MAX - 1, 10)),
 		with_help("Output interface.", ec_node_dyn("IFACE", complete_iface_names, NULL)),
-		with_help("Mark as remote (EVPN).", ec_node_str("remote", "remote"))
+		with_help("Mark as remote (EVPN).", ec_node_str("remote", "remote")),
+		with_help("Count the packets sent to this nexthop.", ec_node_str("stats", "stats"))
 	);
 	if (ret < 0)
 		return ret;
@@ -706,6 +765,22 @@ static int ctx_init(struct ec_node *root) {
 					ec_node_str("static", "static")
 				)
 			)
+		)
+	);
+	if (ret < 0)
+		return ret;
+	ret = CLI_COMMAND(
+		NEXTHOP_CTX(root),
+		"stats [(vrf VRF),(type TYPE),(max MAX)]",
+		nh_stats,
+		"Show the counters of the nexthops that have stats enabled.",
+		with_help("L3 routing domain name.", ec_node_dyn("VRF", complete_vrf_names, NULL)),
+		with_help(
+			"Nexthop type (default all).", ec_node_dyn("TYPE", complete_nh_types, NULL)
+		),
+		with_help(
+			"Max. number of nexthops to display (default 1000, use 0 for unlimited).",
+			ec_node_uint("MAX", 0, UINT16_MAX, 10)
 		)
 	);
 	if (ret < 0)

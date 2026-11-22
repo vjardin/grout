@@ -28,6 +28,11 @@ LOG_TYPE("nexthop");
 static struct rte_mempool *pool;
 static struct id_pool *pool_id;
 static struct rte_hash *hash_by_id;
+static struct id_pool *stats_ids;
+static void *stats_lcore_cb;
+struct nexthop_stats *nexthop_stats[RTE_MAX_LCORE];
+// What the counters were when they were last reset, indexed by nexthop->stats_id.
+static struct nexthop_stats *stats_base;
 static const struct nexthop_type_ops *type_ops[UINT_NUM_VALUES(gr_nh_type_t)];
 
 #define nexthop_type_ops_foreach(t, ops)                                                           \
@@ -161,6 +166,110 @@ static struct rte_hash *create_hash_by_id(const struct gr_nexthop_config *c) {
 	return h;
 }
 
+static struct nexthop_stats *stats_table_alloc(uint32_t max_count) {
+	// IDs start at 1.
+	return calloc(max_count + 1, sizeof(struct nexthop_stats));
+}
+
+static int stats_lcore_init(unsigned lcore_id, void *) {
+	if (nexthop_stats[lcore_id] == NULL)
+		nexthop_stats[lcore_id] = stats_table_alloc(nh_conf.max_count);
+
+	return nexthop_stats[lcore_id] == NULL ? -ENOMEM : 0;
+}
+
+// Give all lcores a table that can hold max_count counters.
+static int stats_resize(uint32_t max_count) {
+	struct nexthop_stats *tables[RTE_MAX_LCORE] = {NULL};
+	struct nexthop_stats *base;
+	struct id_pool *ids;
+	unsigned lcore_id;
+
+	ids = id_pool_create(1, max_count);
+	if (ids == NULL)
+		return errno_log(errno, "id_pool_create");
+
+	base = stats_table_alloc(max_count);
+	if (base == NULL)
+		goto fail;
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (nexthop_stats[lcore_id] == NULL)
+			continue;
+		tables[lcore_id] = stats_table_alloc(max_count);
+		if (tables[lcore_id] == NULL)
+			goto fail;
+	}
+
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		struct nexthop_stats *old = nexthop_stats[lcore_id];
+		nexthop_stats[lcore_id] = tables[lcore_id];
+		tables[lcore_id] = old;
+	}
+	rte_rcu_qsbr_synchronize(gr_datapath_rcu(), RTE_QSBR_THRID_INVALID);
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++)
+		free(tables[lcore_id]);
+
+	free(stats_base);
+	stats_base = base;
+	id_pool_destroy(stats_ids);
+	stats_ids = ids;
+
+	return 0;
+fail:
+	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++)
+		free(tables[lcore_id]);
+	free(base);
+	id_pool_destroy(ids);
+	return errno_set(ENOMEM);
+}
+
+// The datapath must not use the nexthop or its stats_id anymore.
+static void stats_put(uint32_t stats_id) {
+	for (unsigned lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (nexthop_stats[lcore_id] != NULL)
+			memset(&nexthop_stats[lcore_id][stats_id], 0, sizeof(struct nexthop_stats));
+	}
+	memset(&stats_base[stats_id], 0, sizeof(stats_base[stats_id]));
+	id_pool_put(stats_ids, stats_id);
+}
+
+static void stats_sum(uint32_t stats_id, struct nexthop_stats *sum) {
+	const struct nexthop_stats *s;
+
+	memset(sum, 0, sizeof(*sum));
+	for (unsigned lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		if (nexthop_stats[lcore_id] == NULL)
+			continue;
+		s = &nexthop_stats[lcore_id][stats_id];
+		sum->tx_packets += s->tx_packets;
+		sum->tx_bytes += s->tx_bytes;
+	}
+}
+
+void nexthop_stats_get(const struct nexthop *nh, struct nexthop_stats *stats) {
+	const struct nexthop_stats *base;
+
+	memset(stats, 0, sizeof(*stats));
+	if (nh->stats_id == 0)
+		return;
+
+	stats_sum(nh->stats_id, stats);
+	base = &stats_base[nh->stats_id];
+	stats->tx_packets -= base->tx_packets;
+	stats->tx_bytes -= base->tx_bytes;
+}
+
+// The workers are still counting: do not write in their tables.
+static void stats_reset_cb(struct nexthop *nh, void *) {
+	if (nh->stats_id != 0)
+		stats_sum(nh->stats_id, &stats_base[nh->stats_id]);
+}
+
+void nexthop_stats_reset(void) {
+	nexthop_iter(stats_reset_cb, NULL);
+}
+
 static int nexthop_config_allocate(const struct gr_nexthop_config *c) {
 	struct rte_mempool *p = NULL;
 	struct rte_hash *hid = NULL;
@@ -191,6 +300,9 @@ static int nexthop_config_allocate(const struct gr_nexthop_config *c) {
 		if (ops->reconfig(c) < 0)
 			goto fail;
 	}
+
+	if (stats_resize(c->max_count) < 0)
+		goto fail;
 
 	rte_mempool_free(pool);
 	pool = p;
@@ -355,6 +467,8 @@ int nexthop_update(struct nexthop *nh, const struct gr_nexthop_base *base, const
 		return errno_set(EPFNOSUPPORT);
 	if (nh->ref_count > 0 && base->type != nh->type)
 		return errno_set(EMEDIUMTYPE);
+	if (base->stats && (ops == NULL || !ops->stats))
+		return errno_set(EOPNOTSUPP);
 
 	nexthop_id_put(nh);
 
@@ -382,6 +496,19 @@ int nexthop_update(struct nexthop *nh, const struct gr_nexthop_base *base, const
 	if (ops != NULL && ops->import_info != NULL) {
 		if ((ret = ops->import_info(nh, info)) < 0)
 			goto err;
+	}
+
+	if (nh->stats && nh->stats_id == 0) {
+		nh->stats_id = id_pool_get(stats_ids);
+		if (nh->stats_id == 0) {
+			ret = -ENOSPC;
+			goto err;
+		}
+	} else if (!nh->stats && nh->stats_id != 0) {
+		uint32_t stats_id = nh->stats_id;
+		nh->stats_id = 0;
+		rte_rcu_qsbr_synchronize(gr_datapath_rcu(), RTE_QSBR_THRID_INVALID);
+		stats_put(stats_id);
 	}
 
 	if (nh->ref_count > 0 && nh->origin != GR_NH_ORIGIN_INTERNAL)
@@ -519,6 +646,8 @@ void nexthop_destroy(struct nexthop *nh) {
 	ops = type_ops[nh->type];
 	if (ops != NULL && ops->free != NULL)
 		ops->free(nh);
+	if (nh->stats_id != 0)
+		stats_put(nh->stats_id);
 	rte_mempool_put(pool, nh);
 }
 
@@ -537,9 +666,21 @@ static void nh_init(struct event_base *) {
 	nh_conf.max_count = gr_config.max_nexthops;
 	if (nexthop_config_allocate(&nh_conf) < 0)
 		ABORT("nexthop_config_allocate failed: %s", strerror(errno));
+
+	stats_lcore_cb = rte_lcore_callback_register("nexthop_stats", stats_lcore_init, NULL, NULL);
+	if (stats_lcore_cb == NULL)
+		ABORT("rte_lcore_callback_register(nexthop_stats) failed");
 }
 
 static void nh_fini(struct event_base *) {
+	rte_lcore_callback_unregister(stats_lcore_cb);
+	for (unsigned lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
+		free(nexthop_stats[lcore_id]);
+		nexthop_stats[lcore_id] = NULL;
+	}
+	free(stats_base);
+	stats_base = NULL;
+	id_pool_destroy(stats_ids);
 	rte_hash_free(hash_by_id);
 	rte_mempool_free(pool);
 }

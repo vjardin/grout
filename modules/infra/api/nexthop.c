@@ -111,6 +111,55 @@ static struct api_out nh_list(const void *request, struct api_ctx *ctx) {
 	return api_out(0, 0, NULL);
 }
 
+static struct api_out nh_stats_list(const void *request, struct api_ctx *ctx) {
+	const struct gr_nh_list_req *req = request;
+	struct nexthop_stats stats;
+	struct gr_nexthop *pub_nh;
+	struct nexthop *nh = NULL;
+	struct gr_nh_stats *resp;
+	unsigned n = 0;
+	size_t len;
+
+	for (;;) {
+		nh = nexthop_next(nh);
+		if (nh == NULL)
+			return api_out(0, 0, NULL);
+
+		if (nh->stats_id == 0)
+			continue;
+		if (nh->vrf_id != req->vrf_id && req->vrf_id != GR_VRF_ID_UNDEF)
+			continue;
+		if (req->type != GR_NH_T_ALL && nh->type != req->type)
+			continue;
+		if (!req->include_internal && nh->origin == GR_NH_ORIGIN_INTERNAL)
+			continue;
+
+		if (req->max_count != 0 && n >= req->max_count)
+			return api_out(EXFULL, 0, NULL);
+
+		pub_nh = nexthop_to_api(nh, &len);
+		if (pub_nh == NULL)
+			return api_out(errno, 0, NULL);
+
+		resp = malloc(offsetof(struct gr_nh_stats, nh) + len);
+		if (resp == NULL) {
+			free(pub_nh);
+			return api_out(ENOMEM, 0, NULL);
+		}
+		nexthop_stats_get(nh, &stats);
+		resp->tx_packets = stats.tx_packets;
+		resp->tx_bytes = stats.tx_bytes;
+		memcpy(&resp->nh, pub_nh, len);
+		api_send(ctx, offsetof(struct gr_nh_stats, nh) + len, resp);
+		free(pub_nh);
+		free(resp);
+
+		n++;
+	}
+
+	return api_out(0, 0, NULL);
+}
+
 static struct api_out nh_get(const void *request, struct api_ctx *) {
 	const struct gr_nh_get_req *req = request;
 	struct nexthop *nh;
@@ -158,4 +207,5 @@ RTE_INIT(_init) {
 	api_handler(GR_NH_LIST, nh_list);
 	api_handler(GR_NH_GET, nh_get);
 	api_handler(GR_NH_FLUSH, nh_flush);
+	api_handler(GR_NH_STATS_LIST, nh_stats_list);
 }
