@@ -299,6 +299,52 @@ static void icmp_input_error_valid(void **) {
 	icmp_input_process(NULL, NULL, &obj, 1);
 }
 
+#define TEST_HZ 1000000
+#define TEST_RATE 1000
+#define TEST_TOKEN_TICKS (TEST_HZ / TEST_RATE)
+
+static void rate_limit_refill(void **) {
+	struct rate_limit_ctx ctx = {0};
+	unsigned taken = 0;
+	uint64_t now;
+
+	assert_false(rate_limited_at(&ctx, 0, RTE_GRAPH_BURST_SIZE, 0, TEST_HZ));
+
+	assert_true(rate_limited_at(&ctx, TEST_RATE, 1, TEST_TOKEN_TICKS - 1, TEST_HZ));
+	assert_false(rate_limited_at(&ctx, TEST_RATE, 1, TEST_TOKEN_TICKS, TEST_HZ));
+	assert_true(rate_limited_at(&ctx, TEST_RATE, 1, TEST_TOKEN_TICKS + 1, TEST_HZ));
+
+	ctx = (struct rate_limit_ctx) {0};
+	for (now = 0; now <= TEST_HZ; now += TEST_TOKEN_TICKS * 19 / 10) {
+		while (!rate_limited_at(&ctx, TEST_RATE, 1, now, TEST_HZ))
+			taken++;
+	}
+	assert_in_range(taken, TEST_RATE - 2, TEST_RATE);
+}
+
+static void rate_limit_idle(void **) {
+	struct rate_limit_ctx ctx = {0};
+
+	assert_false(rate_limited_at(&ctx, TEST_RATE, 1, 131100ULL * TEST_TOKEN_TICKS, TEST_HZ));
+	assert_int_equal(ctx.tokens, TEST_RATE - 1);
+
+	ctx = (struct rate_limit_ctx) {0};
+	assert_false(rate_limited_at(&ctx, UINT16_MAX, 1, UINT64_MAX / 2, TEST_HZ));
+	assert_int_equal(ctx.tokens, UINT16_MAX - 1);
+}
+
+static void rate_limit_vector(void **) {
+	struct rate_limit_ctx ctx = {.tokens = 10};
+
+	assert_false(rate_limited_at(&ctx, TEST_RATE, RTE_GRAPH_BURST_SIZE, 0, TEST_HZ));
+	assert_int_equal(ctx.tokens, 0);
+	assert_true(rate_limited_at(&ctx, TEST_RATE, RTE_GRAPH_BURST_SIZE, 0, TEST_HZ));
+
+	ctx = (struct rate_limit_ctx) {.tokens = TEST_RATE};
+	assert_false(rate_limited_at(&ctx, 10, 1, TEST_HZ / 10, TEST_HZ));
+	assert_int_equal(ctx.tokens, 10 - 1);
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(icmp_input_too_short),
@@ -307,6 +353,9 @@ int main(void) {
 		cmocka_unit_test(icmp_input_error_too_short),
 		cmocka_unit_test(icmp_input_error_inner_ihl_too_long),
 		cmocka_unit_test(icmp_input_error_valid),
+		cmocka_unit_test(rate_limit_refill),
+		cmocka_unit_test(rate_limit_idle),
+		cmocka_unit_test(rate_limit_vector),
 	};
 
 	return cmocka_run_group_tests(tests, NULL, NULL);
