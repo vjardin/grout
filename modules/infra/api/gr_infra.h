@@ -494,9 +494,9 @@ typedef enum : uint16_t {
 struct gr_graph_conf {
 	uint16_t rx_burst_max; // default 64, max 256
 	uint16_t vector_max; // default 64, max 256
-	uint16_t icmp_error_rate; // ICMP errors/sec per node per worker, 0 = no limit, default 1000
-	uint16_t arp_rate; // ARP packets/sec per worker, 0 = no limit, default 1000
-	uint16_t icmp_rate; // ICMP/ICMPv6 input packets/sec per worker, 0 = no limit, default 1000
+	uint16_t icmp_error_rate; // ICMP errors/sec per node per worker, default 0 = no limit
+	uint16_t arp_rate; // ARP packets/sec per worker, default 0 = no limit
+	uint16_t icmp_rate; // ICMP/ICMPv6 input packets/sec per worker, default 0 = no limit
 };
 
 GR_REQ(GR_GRAPH_CONF_GET, struct gr_empty, struct gr_graph_conf);
